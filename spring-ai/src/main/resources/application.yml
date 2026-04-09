@@ -2,6 +2,10 @@ spring:
   application:
     name: llmentor
 
+  ai:
+    dashscope:
+      api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
+
 server:
   port: 8080
 
