@@ -35,6 +35,7 @@ public class StructuredOutputController implements InitializingBean {
     public String chat(HttpServletResponse response) {
         response.setCharacterEncoding("UTF-8");
 
+        // 1 定义converter对象
         BeanOutputConverter<Book> beanOutputConverter = new BeanOutputConverter<>(Book.class);
 
         PromptTemplate promptTemplate = new PromptTemplate("""
@@ -42,11 +43,13 @@ public class StructuredOutputController implements InitializingBean {
                 {format}
                 """);
 
+        // 2 替换提示词 format
         String result = chatClient.prompt(promptTemplate.create(Map.of("format", beanOutputConverter.getFormat())))
                 .system("你是一个专业的图书推荐人员")
                 .call()
                 .content();
 
+        // 3 结果转成bean对象
         Book book = beanOutputConverter.convert(result);
         System.out.println(book);
 
@@ -59,6 +62,7 @@ public class StructuredOutputController implements InitializingBean {
      */
     @GetMapping("/bean")
     public String bean(HttpServletResponse response) {
+        // 1 替换提示词 2 把输出对象转换为bean对象
         Book book = chatClient.prompt("请帮我推荐一本java相关的书")
                 .system("你是一个专业的图书推荐人员")
                 .call()
@@ -84,6 +88,8 @@ public class StructuredOutputController implements InitializingBean {
     }
 
     /**
+     * 常用
+     *
      * list输出
      * entity(new ParameterizedTypeReference<List<Book>>()
      */
