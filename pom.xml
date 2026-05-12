@@ -16,6 +16,7 @@
 	<properties>
 		<java.version>21</java.version>
         <spring.ai.alibaba>1.1.0.0</spring.ai.alibaba>
+        <langchain4j.version>1.13.0-beta23</langchain4j.version>
 	</properties>
 
     <dependencyManagement>
@@ -33,6 +34,7 @@
 
 	<modules>
 		<module>spring-ai</module>
+        <module>lagchain4j</module>
 	</modules>
 
 </project>
