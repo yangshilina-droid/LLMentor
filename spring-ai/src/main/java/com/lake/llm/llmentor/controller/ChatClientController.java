@@ -7,8 +7,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,7 +25,7 @@ import reactor.core.publisher.Flux;
 public class ChatClientController implements InitializingBean {
 
     @Autowired
-    private ChatModel chatModel;
+    private DashScopeChatModel chatModel;
 
     private ChatClient chatClient;
 

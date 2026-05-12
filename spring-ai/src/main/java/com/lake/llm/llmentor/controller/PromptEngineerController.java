@@ -1,8 +1,8 @@
 package com.lake.llm.llmentor.controller;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,7 +20,7 @@ import reactor.core.publisher.Flux;
 @RequestMapping("/prompt/engineer")
 public class PromptEngineerController implements InitializingBean {
     @Autowired
-    private ChatModel chatModel;
+    private DashScopeChatModel chatModel;
 
     private ChatClient chatClient;
 

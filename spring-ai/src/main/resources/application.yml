@@ -6,6 +6,11 @@ spring:
     dashscope:
       api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
 
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: llama3:latest
+
     chat:
       memory:
         repository:

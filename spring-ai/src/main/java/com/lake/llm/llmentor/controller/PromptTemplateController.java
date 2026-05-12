@@ -1,8 +1,8 @@
 package com.lake.llm.llmentor.controller;
 
+import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.template.st.StTemplateRenderer;
 import org.springframework.beans.factory.InitializingBean;
@@ -29,7 +29,7 @@ import java.util.Map;
 public class PromptTemplateController implements InitializingBean {
 
     @Autowired
-    private ChatModel chatModel;
+    private DashScopeChatModel chatModel;
 
     private ChatClient chatClient;
 
