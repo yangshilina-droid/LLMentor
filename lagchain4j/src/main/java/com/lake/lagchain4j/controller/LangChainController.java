@@ -166,6 +166,7 @@ public class LangChainController {
                         .build())
                 .build();
 
+        // 需要在提示词末尾加上 output in json format
         ChatRequest chatRequest = ChatRequest.builder()
                 .responseFormat(responseFormat)
                 .messages(UserMessage.from("""
