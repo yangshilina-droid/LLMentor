@@ -5,3 +5,11 @@ spring:
 server:
   port: 8081
 
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
+      model-name: qwen-max-latest
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      log-requests: true
+      log-responses: true
