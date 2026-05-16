@@ -83,7 +83,6 @@ public class LangChainHighLevelController implements InitializingBean {
         langChainMemoryAiService = AiServices.builder(LangChainMemoryAiService.class)
                 .chatModel(chatModel)
                 .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(10))
-                //                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder().id(memoryId).maxMessages(10).chatMemoryStore(redisChatMemoryStore).build())
                 .build();
     }
 
