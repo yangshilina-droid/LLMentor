@@ -45,6 +45,11 @@
             <artifactId>langchain4j-reactor</artifactId>
             <version>1.8.0-beta15</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
