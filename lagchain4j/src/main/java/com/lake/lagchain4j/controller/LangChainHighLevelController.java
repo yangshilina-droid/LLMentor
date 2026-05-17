@@ -79,18 +79,22 @@ public class LangChainHighLevelController implements InitializingBean {
         return langChainMemoryAiService.chatMemory(memoryId, msg);
     }
 
-    @Autowired
-    private RedisChatMemoryStore redisChatMemoryStore;
+    // 持久化记忆
+    // @Autowired
+    // private RedisChatMemoryStore redisChatMemoryStore;
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        langChainMemoryAiService = AiServices.builder(LangChainMemoryAiService.class).chatModel(chatModel)
-                // .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(10))
-                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
-                        .id(memoryId)
-                        .maxMessages(10)
-                        .chatMemoryStore(redisChatMemoryStore)
-                        .build()).build();
+        langChainMemoryAiService = AiServices.builder(LangChainMemoryAiService.class)
+                .chatModel(chatModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(10))
+                // 持久化记忆
+                // .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
+                //         .id(memoryId)
+                //         .maxMessages(10)
+                //         .chatMemoryStore(redisChatMemoryStore)
+                //         .build())
+                .build();
     }
 
     /**
