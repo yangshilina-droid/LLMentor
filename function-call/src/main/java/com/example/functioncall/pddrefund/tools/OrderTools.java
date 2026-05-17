@@ -16,6 +16,7 @@ public class OrderTools {
     public String refund(@ToolParam(description = "订单编号，为数字类型") String orderId, @ToolParam(description = "商品名称") String name, @ToolParam(description = "退款原因") String reason) {
         System.out.println("已为商品:" + name + ",订单号:" + orderId + "申请退款 , 退款原因： " + reason);
 
+        // 调用订单系统的退款接口
         orderManageService.refund(orderId, reason);
 
         return "已为商品：" + name + ",订单号：" + orderId + "申请退款 , 退款原因： " + reason;
