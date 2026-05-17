@@ -1,6 +1,13 @@
 spring:
   application:
     name: langchain4j
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 5s
+      password: 123456
 
 server:
   port: 8081
