@@ -37,6 +37,15 @@ public class PddRefundController {
     @Value("classpath:templates/pdd_refund_system_prompt.pt")
     private Resource systemText;
 
+    /**
+     * 输入 userId 和 orderId 创建一个新的聊天
+     * 返回 OrderChat 对象，包含chatId
+     *
+     * 技术选型
+     * 1 对话记忆
+     * 2 结构化输出
+     *
+     */
     @GetMapping("/newChat")
     public OrderChat newChat(String userId, String orderId, HttpServletResponse httpServletResponse) {
         httpServletResponse.setCharacterEncoding("UTF-8");
@@ -52,6 +61,16 @@ public class PddRefundController {
                 .call().entity(OrderChat.class);
     }
 
+    /**
+     * 输入问题、chatId，继续之前的聊天。
+     *
+     * 技术选型
+     * 1、提示词工程+提示词模板
+     * 2、Function Call
+     * 3、对话记忆
+     * 4、流式输出
+     *
+     */
     @GetMapping("/ask")
     public Flux<String> ask(String question, String chatId, HttpServletResponse httpServletResponse) {
         httpServletResponse.setCharacterEncoding("UTF-8");
