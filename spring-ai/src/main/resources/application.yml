@@ -30,4 +30,4 @@ server:
 dashscope:
   api-key: ${DASHSCOPE_API_KEY:}
   api-url: https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
-  model: qwen-plus
+  model: qwen-max

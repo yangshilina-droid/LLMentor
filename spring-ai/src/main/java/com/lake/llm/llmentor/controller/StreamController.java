@@ -34,7 +34,7 @@ public class StreamController {
     public HttpResponse<String> httpClient() {
         String requestBody = """
                 {
-                    "model": "qwen-plus",
+                    "model": "qwen-max",
                     "messages": [
                         {
                             "role": "user",

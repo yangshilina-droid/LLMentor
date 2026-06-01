@@ -19,12 +19,19 @@
         <spring.ai.version>1.1.0</spring.ai.version>
         <fastjson.version>2.0.43</fastjson.version>
         <langchain4j.version>1.13.0-beta23</langchain4j.version>
+        <fastjson.version>2.0.43</fastjson.version>
         <!-- 统一配置API Key ，记得改成你自己的-->
         <dashscope.api.key>sk-430e069e0b8a4e4f828344764a4f1b7a</dashscope.api.key>
 	</properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>${fastjson.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>com.alibaba.cloud.ai</groupId>
                 <artifactId>spring-ai-alibaba-bom</artifactId>

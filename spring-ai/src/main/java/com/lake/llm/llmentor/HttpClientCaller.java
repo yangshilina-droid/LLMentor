@@ -28,7 +28,7 @@ public class HttpClientCaller {
         // stream 控制流式输出，开启后实时给用户生成文本，不是生成全部文本后展示给用户
         String requestBody = """
                 {
-                    "model": "qwen-plus",
+                    "model": "qwen-max",
                     "messages": [
                         {
                             "role": "system",
