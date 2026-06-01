@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: mcp-server-stdio
+  main:
+    web-application-type: none
+    banner-mode: off
+
+  ai:
+    mcp:
+      server:
+        name: mcp-server
+        version: 1.0.0
+        stdio: true
+        enabled: true
+        type: SYNC
+
+logging:
+  level:
+    root: OFF
