@@ -1,0 +1,26 @@
+server:
+  port: 8004
+  servlet:
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+
+spring:
+  application:
+    name: mcp-weather-streamable
+  ai:
+    mcp:
+      server:
+        ## ??????STATELESS????????
+        protocol: STREAMABLE
+        name: streamable-mcp-server
+        version: 1.0.0
+        type: SYNC
+        instructions: "???????????????"
+        resource-change-notification: true
+        tool-change-notification: true
+        prompt-change-notification: true
+        streamable-http:
+          mcp-endpoint: /api/mcp
+          keep-alive-interval: 30s

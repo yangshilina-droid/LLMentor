@@ -1,4 +1,4 @@
-package com.lake.mcpserversse;
+package com.lake.mcpserverstreamable;
 
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -7,10 +7,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 @SpringBootApplication
-public class McpServerSseApplication {
+public class McpServerStreamableApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(McpServerSseApplication.class, args);
+        SpringApplication.run(McpServerStreamableApplication.class, args);
     }
 
     @Bean
