@@ -24,18 +24,18 @@ spring:
         stdio:
           connections:
             weather-stdio:
-              command: ${MCP_SERVER_JAVA:/Users/ysl/Library/Java/JavaVirtualMachines/azul-21.0.10/Contents/Home/bin/java}
+              command: java
               args:
                 - -jar
                 - "/Users/ysl/Documents/IdeaProjects/llmentor/mcp/mcp-server-stdio/target/mcp-server-stdio-0.0.1-SNAPSHOT.jar"
+        ##          servers-configuration: classpath:/mcp-servers.json
         sse:
           connections:
             weather-sse:
               url: http://127.0.0.1:8003/
               sse-endpoint: sse
-
         streamable-http:
           connections:
             weather-streamable:
-              url: http://127.0.0.1:8004/
+              url: http://127.0.0.1:8004/stream/test/
               endpoint: api/mcp
