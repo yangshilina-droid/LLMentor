@@ -1,7 +1,6 @@
 package com.lake.mcpclient.controller;
 
 
-import com.lake.mcpclient.service.ManualMcpClientService;
 import com.lake.mcpclient.service.McpClientService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +19,8 @@ public class McpClientController {
     @Autowired
     private McpClientService mcpClientService;
 
-    @Autowired
-    private ManualMcpClientService manualMcpClientService;
+    // @Autowired
+    // private ManualMcpClientService manualMcpClientService;
 
     @GetMapping("/callTool")
     public Object callTool(@RequestParam("type") String type) {
@@ -36,11 +35,11 @@ public class McpClientController {
         return mcpClientService.chat(query);
     }
 
-    @GetMapping("/manualChat")
-    public String manualChat(@RequestParam("query") String query) {
-        log.info("manualChat request => {}", query);
-
-        return manualMcpClientService.chat(query);
-    }
+    // @GetMapping("/manualChat")
+    // public String manualChat(@RequestParam("query") String query) {
+    //     log.info("manualChat request => {}", query);
+    //
+    //     return manualMcpClientService.chat(query);
+    // }
 
 }

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -38,6 +39,7 @@ public class McpClientService {
         String toolName = "getWeather";
         Map param = new HashMap();
         param.put("city", "北京");
+        String expectedType = type == null ? "" : type.trim();
 
         for (McpSyncClient client : mcpSyncClients) {
             McpSchema.Implementation clientInfo = client.getClientInfo();
@@ -45,7 +47,7 @@ public class McpClientService {
             log.info("clientInfo: {}", JSON.toJSONString(clientInfo));
             log.info("serverInfo: {}", JSON.toJSONString(serverInfo));
             try {
-                if (clientInfo.title().contains(type)) {
+                if (expectedType.isEmpty() || clientInfo.title().contains(expectedType)) {
                     log.info("开始调用mcp服务");
                     McpSchema.CallToolRequest request = McpSchema.CallToolRequest.builder().name(toolName).arguments(param).build();
                     McpSchema.CallToolResult result = client.callTool(request);
@@ -57,7 +59,14 @@ public class McpClientService {
             }
             log.info("====================================================");
         }
-        return null;
+        String availableClients = mcpSyncClients.stream()
+                .map(client -> client.getClientInfo().title())
+                .collect(Collectors.joining(", "));
+        log.warn("未找到匹配 type={} 的 MCP client，可用 client: {}", expectedType, availableClients);
+        return McpSchema.CallToolResult.builder()
+                .isError(true)
+                .addTextContent("未找到匹配 type=" + expectedType + " 的 MCP client，可用 client: " + availableClients)
+                .build();
     }
     @PostConstruct
     public void init() {
