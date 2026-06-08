@@ -75,10 +75,6 @@ public class McpClientService {
         this.chatClient = ChatClient.builder(chatModel)
                 .defaultToolCallbacks(toolCallbacks)
                 .build();
-
-//        this.chatClient = ChatClient.builder(chatModel)
-//                .defaultTools(new WeatherService())
-//                .build();
     }
 
     /**
