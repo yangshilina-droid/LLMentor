@@ -1,0 +1,17 @@
+server:
+  port: 8008
+
+spring:
+  application:
+    name: general-agent
+
+  ai:
+    openai:
+#      api-key: @dashscope.api.key@
+      api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/
+      chat:
+        options:
+          model: qwen3.7-plus
+          temperature: 0.7
+          maxTokens: 5000
