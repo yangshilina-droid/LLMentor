@@ -75,11 +75,11 @@ public class ReactAgentController {
         ChatOptions chatOptions = ToolCallingChatOptions.builder()
                 //指定工具
                 .toolCallbacks(ToolCallbacks.from(new StockTools()))
-                //指定不自动执行工具
+                //todo 指定不自动执行工具
                 .internalToolExecutionEnabled(false)
                 .build();
 
-        //定义提示词，要求按照React架构运行
+        //todo 定义提示词，要求按照React架构运行
         Prompt prompt = new Prompt(
                 List.of(new SystemMessage("你是一个基于React架构（Reasoning-Act-Observation）的智能助手，你擅长使用工具帮我解决问题。" +
                         "你的工作流程是：" +
@@ -100,7 +100,7 @@ public class ReactAgentController {
         //添加模型返回结果到记忆
         chatMemory.add(conversationId, chatResponse.getResult().getOutput());
 
-        //循环处理工具调用
+        //todo 循环处理工具调用
         while (chatResponse.hasToolCalls()) {
             //执行工具调用
             ToolExecutionResult toolExecutionResult = toolCallingManager.executeToolCalls(promptWithMemory,
