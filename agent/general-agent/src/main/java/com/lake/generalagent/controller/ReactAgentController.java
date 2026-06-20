@@ -1,17 +1,7 @@
 package com.lake.generalagent.controller;
 
-import com.alibaba.cloud.ai.graph.RunnableConfig;
-import com.alibaba.cloud.ai.graph.agent.ReactAgent;
-import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
-import com.alibaba.cloud.ai.graph.checkpoint.savers.mysql.MysqlSaver;
-import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
-import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.lake.generalagent.tools.StockTools;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -23,21 +13,13 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.support.ToolCallbacks;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
-import javax.sql.DataSource;
-import java.net.http.HttpClient;
-import java.time.Duration;
 import java.util.Calendar;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/react")
