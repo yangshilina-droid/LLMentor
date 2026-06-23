@@ -1,7 +1,12 @@
 package com.lake.generalagent.controller;
 
+import com.alibaba.cloud.ai.graph.RunnableConfig;
+import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.checkpoint.savers.MemorySaver;
+import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.lake.generalagent.tools.StockTools;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -67,7 +72,7 @@ public class ReactAgentController {
     }
 
     /**
-     * React Agent
+     * 手搓 React Agent
      */
     @GetMapping("/chatWithSpringAi")
     public String chatWithSpringAi(String conversationId) {
@@ -127,6 +132,32 @@ public class ReactAgentController {
         return chatResponse.getResult().getOutput().getText();
     }
 
+    @GetMapping("/chatWithSpringAiAlibaba")
+    public String chatWithSpringAiAlibaba(String conversationId) throws GraphRunnerException {
+
+        String systemPrompt = String.format("你是一个智能助手，你擅长使用工具帮我解决问题。" +
+                "你的工作流程是：" +
+                "1、思考：先根据用户的提问进行思考，推理出下一步需要进行的具体系统" +
+                "2、行动：做具体的行动，这一步可以使用工具" +
+                "3、观察：记录前一步行动的结果。你可以进行多轮思考和行动。如果要使用工具，请务必调用工具，不要自己随便捏造结果。");
+
+        // 内置 ReactAgent
+        ReactAgent agent = ReactAgent.builder()
+                .name("executor")
+                .model(chatModel)
+                .tools(ToolCallbacks.from(new StockTools()))
+                .systemPrompt(systemPrompt)
+                .saver(new MemorySaver())
+                .build();
+
+        RunnableConfig config = RunnableConfig.builder()
+                .threadId(conversationId)
+                .build();
+
+        AssistantMessage chatResponse = agent.call("帮我分析最近三个月特斯拉（TSLA）的股价走势，并结合新闻事件解释可能的影响因素。", config);
+
+        return chatResponse.getText();
+    }
 
 
 }

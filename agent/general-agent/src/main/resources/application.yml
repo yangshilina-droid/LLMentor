@@ -4,7 +4,7 @@ server:
 spring:
   application:
     name: general-agent
-
+  # spring ai ? spring ai alibaba???????spring ai alibaba??spring ai??????
   ai:
     openai:
       api-key: @dashscope.api.key@
