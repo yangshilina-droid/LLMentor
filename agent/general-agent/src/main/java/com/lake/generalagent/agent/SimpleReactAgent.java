@@ -463,7 +463,9 @@ public class SimpleReactAgent {
 
         messages.add(assistantMsg);
 
-        executeToolCalls(state.toolCalls, messages, hasSentFinalResult, () -> {
+        executeToolCalls(state.toolCalls, messages, hasSentFinalResult,
+                // 回调函数
+                () -> {
             if (!hasSentFinalResult.get()) {
                 scheduleRound(messages, sink, roundCounter,
                         hasSentFinalResult, finalAnswerBuffer,
@@ -682,12 +684,12 @@ public class SimpleReactAgent {
                 请你根据北京今天的天气、未来七天的天气趋势、以及上海今天的天气，并搜索北京天气的预警情况，生成一份不少于 600 字的综合分析报告。
                 """;
 
-        // 6 非流式输出，调用ReactAgent模型
-        System.out.println(agent.call(question));
+        // // 6 非流式输出，调用ReactAgent模型
+        // System.out.println(agent.call(question));
 
-        // // 6 流式输出，调用ReactAgent模型
-        // agent.stream(question).doOnNext(chuck -> {
-        //     System.out.print(chuck);
-        // }).blockLast();
+        // 6 流式输出，调用ReactAgent模型
+        agent.stream(question).doOnNext(chuck -> {
+            System.out.print(chuck);
+        }).blockLast();
     }
 }
