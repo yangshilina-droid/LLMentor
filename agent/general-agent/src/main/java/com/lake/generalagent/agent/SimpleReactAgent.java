@@ -322,6 +322,7 @@ public class SimpleReactAgent {
 
 
     public Flux<String> streamInternal(String conversationId, String question) {
+        // 初始化上下文
         List<Message> messages = Collections.synchronizedList(new ArrayList<>());
         boolean useMemory = conversationId != null && chatMemory != null;
 
@@ -348,7 +349,7 @@ public class SimpleReactAgent {
         AtomicLong roundCounter = new AtomicLong(0);
         // 是否发送最终结果标记位
         AtomicBoolean hasSentFinalResult = new AtomicBoolean(false);
-
+        // 初始化
         hasSentFinalResult.set(false);
         roundCounter.set(0);
 
@@ -376,9 +377,13 @@ public class SimpleReactAgent {
                 .messages(messages)
                 .stream()
                 .chatResponse()
+                // 主线程和工作线程隔离
                 .publishOn(Schedulers.boundedElastic())
+                // 处理流式chunk
                 .doOnNext(chunk -> processChunk(chunk, sink, state))
+                // 轮次结束处理工具调用
                 .doOnComplete(() -> finishRound(messages, sink, state, roundCounter, hasSentFinalResult, finalAnswerBuffer, useMemory, conversationId))
+                // 异常处理
                 .doOnError(err -> {
                     if (!hasSentFinalResult.get()) {
                         hasSentFinalResult.set(true);
@@ -390,8 +395,9 @@ public class SimpleReactAgent {
 
     private void processChunk(ChatResponse chunk, Sinks.Many<String> sink, RoundState state) {
 
-        if (chunk == null || chunk.getResult() == null ||
-                chunk.getResult().getOutput() == null) return;
+        if (chunk == null || chunk.getResult() == null || chunk.getResult().getOutput() == null) {
+            return;
+        }
 
         Generation gen = chunk.getResult();
         String text = gen.getOutput().getText();
@@ -402,6 +408,7 @@ public class SimpleReactAgent {
             state.mode = RoundMode.TOOL_CALL;
 
             for (AssistantMessage.ToolCall incoming : tc) {
+                // 流式输出，合并工具
                 mergeToolCall(state, incoming);
             }
             return;
@@ -414,6 +421,11 @@ public class SimpleReactAgent {
         }
     }
 
+    /**
+     * 流式输出合并 工具参数
+     *
+     * 流式输出工具不是一次性输出的
+     */
     private void mergeToolCall(RoundState state, AssistantMessage.ToolCall incoming) {
 
         for (int i = 0; i < state.toolCalls.size(); i++) {
@@ -441,7 +453,8 @@ public class SimpleReactAgent {
     private void finishRound(List<Message> messages, Sinks.Many<String> sink, RoundState state, AtomicLong roundCounter,
                              AtomicBoolean hasSentFinalResult, StringBuilder finalAnswerBuffer, boolean useMemory, String conversationId) {
 
-        // 如果整轮都没有 tool_call，才是最终答案
+        // 如果整轮都没有 tool_call，才是最终答案 RoundMode使用
+        // ReactAgent 是循环调用，每轮都会初始化 RoundMode.UNKNOWN。如果当前轮次没有工具调用，则退出循环输出模型结果
         if (state.mode != RoundMode.TOOL_CALL) {
             String finalText = state.textBuffer.toString();
             sink.tryEmitComplete();
@@ -453,6 +466,7 @@ public class SimpleReactAgent {
             return;
         }
 
+        // 达到最大轮次
         if (maxRounds > 0 && roundCounter.get() >= maxRounds) {
             forceFinalStream(conversationId, useMemory, messages, sink, hasSentFinalResult);
             return;
@@ -463,13 +477,15 @@ public class SimpleReactAgent {
 
         messages.add(assistantMsg);
 
+        // 工具调用
         executeToolCalls(state.toolCalls, messages, hasSentFinalResult,
                 // 回调函数
                 () -> {
-            if (!hasSentFinalResult.get()) {
-                scheduleRound(messages, sink, roundCounter,
-                        hasSentFinalResult, finalAnswerBuffer,
-                        useMemory, conversationId);
+                    if (!hasSentFinalResult.get()) {
+                        // ReactAgent循环调用
+                        scheduleRound(messages, sink, roundCounter,
+                                hasSentFinalResult, finalAnswerBuffer,
+                                useMemory, conversationId);
             }
         });
     }
@@ -519,6 +535,9 @@ public class SimpleReactAgent {
                 .subscribe();
     }
 
+    /**
+     * 并发调用工具，合并结果
+     */
     private void executeToolCalls(List<AssistantMessage.ToolCall> toolCalls, List<Message> messages, AtomicBoolean hasSentFinalResult, Runnable onComplete) {
         AtomicInteger completedCount = new AtomicInteger(0);
         int totalToolCalls = toolCalls.size();
@@ -560,6 +579,7 @@ public class SimpleReactAgent {
     private void completeToolCall(AtomicInteger completedCount, int total, Runnable onComplete) {
         int current = completedCount.incrementAndGet();
         if (current >= total) {
+            // 工具调用完成，执行回调，scheduleRound
             onComplete.run();
         }
     }
@@ -677,6 +697,7 @@ public class SimpleReactAgent {
                 .chatMemory(chatMemory)
                 // 设置对话轮次。避免死循环
                 .maxRounds(3)
+                // 系统提示词
                 .systemPrompt("你是专业的研究分析助手！")
                 .build();
         // 5 用户提问
