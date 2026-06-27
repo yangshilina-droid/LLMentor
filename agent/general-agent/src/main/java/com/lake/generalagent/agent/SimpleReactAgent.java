@@ -300,7 +300,9 @@ public class SimpleReactAgent {
     private static class RoundState {
         RoundMode mode = RoundMode.UNKNOWN;
 
+        // 保存记忆
         StringBuilder textBuffer = new StringBuilder();
+        // 保存工具
         List<AssistantMessage.ToolCall> toolCalls = Collections.synchronizedList(new ArrayList<>());
     }
 
@@ -353,7 +355,7 @@ public class SimpleReactAgent {
         hasSentFinalResult.set(false);
         roundCounter.set(0);
 
-        // 收集最终答案，存储memory
+        // 收集通过 sink 输出给调用方的流式文本，并在流结束时打印日志
         StringBuilder finalAnswerBuffer = new StringBuilder();
 
         scheduleRound(messages, sink, roundCounter, hasSentFinalResult, finalAnswerBuffer, useMemory, conversationId);
@@ -544,6 +546,7 @@ public class SimpleReactAgent {
 
         for (AssistantMessage.ToolCall tc : toolCalls) {
             Schedulers.boundedElastic().schedule(() -> {
+                // 终止标记为true，不再调用工具
                 if (hasSentFinalResult.get()) {
                     completeToolCall(completedCount, totalToolCalls, onComplete);
                     return;
@@ -705,12 +708,15 @@ public class SimpleReactAgent {
                 请你根据北京今天的天气、未来七天的天气趋势、以及上海今天的天气，并搜索北京天气的预警情况，生成一份不少于 600 字的综合分析报告。
                 """;
 
-        // // 6 非流式输出，调用ReactAgent模型
+        // 6 非流式输出，调用ReactAgent模型
         // System.out.println(agent.call(question));
 
         // 6 流式输出，调用ReactAgent模型
-        agent.stream(question).doOnNext(chuck -> {
-            System.out.print(chuck);
-        }).blockLast();
+        agent.stream(question)
+                .doOnNext(chuck -> {
+                    System.out.print(chuck);
+                })
+                // 订阅这个流，并让当前线程一直等待，直到流正常结束、异常终止或被取消
+                .blockLast();
     }
 }
