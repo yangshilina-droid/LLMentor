@@ -28,6 +28,9 @@ public class AiSessionServiceImpl extends ServiceImpl<AiSessionMapper, AiSession
         return this.list(queryWrapper);
     }
 
+    /**
+     * 保存提问，每次提问都会保存
+     */
     @Override
     public AiSession saveQuestion(SaveQuestionRequest request) {
         AiSession aiSession = new AiSession();
@@ -43,6 +46,9 @@ public class AiSessionServiceImpl extends ServiceImpl<AiSessionMapper, AiSession
         return aiSession;
     }
 
+    /**
+     * 保存提问的回答、思考过程
+     */
     @Override
     public boolean updateAnswer(UpdateAnswerRequest request) {
         AiSession session = this.getById(request.getId());

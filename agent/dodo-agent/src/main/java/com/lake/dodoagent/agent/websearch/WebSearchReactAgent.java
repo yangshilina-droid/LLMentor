@@ -118,6 +118,7 @@ public class WebSearchReactAgent extends BaseAgent {
         List<Message> messages = Collections.synchronizedList(new ArrayList<>());
         boolean useMemory = conversationId != null && chatMemory != null;
 
+        // 控并发，1个对话，只能有一个任务在跑
         // 检查是否已有任务在执行
         Flux<String> checkResult = checkRunningTask(conversationId);
         if (checkResult != null) {
@@ -142,8 +143,10 @@ public class WebSearchReactAgent extends BaseAgent {
             messages.add(new SystemMessage(systemPrompt));
         }
 
-        // ===== 加载历史记忆 =====
-        loadChatHistory(conversationId, messages, true, true);
+        // ===== 加载历史记忆，放入上下文 =====
+        if(useMemory) {
+            loadChatHistory(conversationId, messages, true, true);
+        }
 
         messages.add(new UserMessage("<question>" + question + "</question>"));
         currentQuestion = question;
@@ -175,10 +178,12 @@ public class WebSearchReactAgent extends BaseAgent {
 
         AgentState agentState = new AgentState();
 
+        // 执行React
         scheduleRound(messages, sink, roundCounter, hasSentFinalResult, finalAnswerBuffer, useMemory, conversationId, agentState, thinkingBuffer);
 
         return sink.asFlux()
                 .doOnNext(chunk -> {
+                    // 记录首次响应时间
                     recordFirstResponse();
                     // 解析 JSON，如果是 type=text，则只拼接 content；如果是 type=thinking，则拼接 thinking
                     try {
