@@ -200,6 +200,7 @@ public class WebSearchReactAgent extends BaseAgent {
                     }
                 })
                 .doOnCancel(() -> {
+                    // 对话结束，从任务管理器中移除任务，确保当前会话可以继续发起新的请求
                     hasSentFinalResult.set(true);
                     if (taskManager != null) {
                         taskManager.stopTask(conversationId);
