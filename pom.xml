@@ -55,7 +55,7 @@
         </dependencies>
     </dependencyManagement>
 
-
+    <!-- 构建当前父项目时，把下面的子模块也纳入 一起管理和构建   -->
 	<modules>
 		<module>spring-ai</module>
         <module>lagchain4j</module>

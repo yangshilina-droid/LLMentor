@@ -35,6 +35,11 @@ spring:
       url-pattern: /druid/*
       login-username: admin
       login-password: admin
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: neo4j
+      password: neo4j666
   data:
     redis:
       host: localhost
@@ -66,7 +71,7 @@ spring:
         codec: !<org.redisson.codec.JsonJacksonCodec> {}
         transportMode: "NIO"
 
-# MyBatis-Plus ??
+# MyBatis-Plus 配置
 mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -75,19 +80,20 @@ mybatis-plus:
 langchain4j:
   open-ai:
     chat-model:
-      api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
+      api-key: @dashscope.api.key@
       model-name: qwen3-30b-a3b-instruct-2507
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       log-requests: true
       log-responses: true
     streaming-chat-model:
-      api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
+      api-key: @dashscope.api.key@
       model-name: qwen3-30b-a3b-instruct-2507
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       log-requests: true
       log-responses: true
   community:
     neo4j:
+      enabled: false
       await-index-timeout: 300
       auth:
         uri: bolt://localhost:7687
@@ -98,61 +104,61 @@ elasticsearch:
   host: http://127.0.0.1:9200
   base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
   model-name: text-embedding-v4
-  api-key: sk-430e069e0b8a4e4f828344764a4f1b7a
+  api-key: @dashscope.api.key@
   dimensions: 1536
 
 minio:
-  url: http://localhost:9000 # ????????
-  accessKey: minioadmin # ????????
-  secretKey: minioadmin # ????????
-  bucketName: know-engine # ????????
-  endpoint: http://localhost:9000 # ????????
+  url: http://localhost:9000 # 记得改成你自己的
+  accessKey: minioadmin # 记得改成你自己的
+  secretKey: minioadmin # 记得改成你自己的
+  bucketName: know-engine # 记得改成你自己的
+  endpoint: http://localhost:9000 # 记得改成你自己的
 
-# ????
+# 图数据库
 neo4j:
   uri: bolt://localhost:7687
   username: neo4j
   password: neo4j666
 
-# ????????
+# 文件解析服务配置
 file:
   parse:
     api:
-      url: http://47.104.64.223:8000 # ?????????????????
+      url: http://47.104.64.223:8000 # 文档解析接口地址，记得改成你自己的
 
-# XXL-Job ??
+# XXL-Job 配置
 xxl:
   job:
     admin:
-      addresses: http://127.0.0.1:8080/xxl-job-admin # xxl-job-admin ???????????
+      addresses: http://127.0.0.1:8080/xxl-job-admin # xxl-job-admin 地址，记得改成你自己的
     accessToken: default_token
     executor:
-      appname: know-engine-executor # ?????
+      appname: know-engine-executor # 执行器名称
 
 dingtalk:
-  #  ???????????
+  #  配置项目启动不依赖钉钉
   enabled: false
   appKey: dingvvfhrqrpk6fbifdz
   appSecret: MUgUPvInkA3w2fOTu7hdfRuRV8Q3kGG3pWk_oremx-OYoUZ9TJT5JsAULx_QYPGS
   robotCode: dingvvfhrqrpk6fbifdz
 
-# Sa-Token ??
+# Sa-Token 配置
 sa-token:
-  # token ??????? Cookie ???Header ???
+  # token 名称（同时也是 Cookie 名称、Header 名称）
   token-name: satoken
-  # token ????????? 30 ??-1 ??????
+  # token 有效期（秒），默认 30 天，-1 代表永久有效
   timeout: 2592000
-  # token ???????????? token ????????????????????-1 ?????
+  # token 最低活跃频率（秒），如果 token 超过这个时间没有访问系统就会被冻结，默认-1 代表不限制
   active-timeout: -1
-  # ?????????????? true ????????? false ???????????
+  # 是否允许同一账号并发登录（为 true 时允许一起登录，为 false 时新登录会挤下旧登录）
   is-concurrent: true
-  # ????????????????? token?? true ????????? token?? false ????????? token?
+  # 在多人登录同一账号时，是否共用一个 token（为 true 时所有登录共用一个 token，为 false 时每次登录新建一个 token）
   is-share: true
-  # token ???uuid?
+  # token 风格（uuid）
   token-style: uuid
-  # ????????
+  # 是否输出操作日志
   is-log: false
-  # ??? cookie ??? token
+  # 是否从 cookie 中读取 token
   is-read-cookie: true
-  # ??? header ??? token
+  # 是否从 header 中读取 token
   is-read-header: true
