@@ -18,6 +18,19 @@ public class FileStorageService {
     @Value("${minio.endpoint}")
     private String endpoint;
 
+    // 上传文件
+    public String uploadFile(MultipartFile file, String objectName) throws Exception {
+        createBucketIfNotExists(true);// 这里可根据你自己的情况改成false，如果改成false，需要在这个方法最后调一次getPresignedUrl
+        minioClient.putObject(PutObjectArgs.builder()
+                .bucket(bucketName)
+                .object(objectName)
+                .stream(file.getInputStream(), file.getSize(), -1)
+                .contentType(file.getContentType())
+                .build());
+        return String.format("%s/%s/%s", endpoint, bucketName, objectName);
+
+    }
+
     // 确保 bucket 存在
     private void createBucketIfNotExists(boolean publicRead) throws Exception {
         if (!minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build())) {
@@ -34,19 +47,6 @@ public class FileStorageService {
                 );
             }
         }
-    }
-
-    // 上传文件
-    public String uploadFile(MultipartFile file, String objectName) throws Exception {
-        createBucketIfNotExists(true);// 这里可根据你自己的情况改成false，如果改成false，需要在这个方法最后调一次getPresignedUrl
-        minioClient.putObject(PutObjectArgs.builder()
-                .bucket(bucketName)
-                .object(objectName)
-                .stream(file.getInputStream(), file.getSize(), -1)
-                .contentType(file.getContentType())
-                .build());
-        return String.format("%s/%s/%s", endpoint, bucketName, objectName);
-
     }
 
 }
