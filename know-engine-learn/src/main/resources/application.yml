@@ -1,0 +1,72 @@
+server:
+  port: 8009
+
+spring:
+  application:
+    name: KnowEngineLearn
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 100MB
+      max-request-size: 100MB
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: jdbc:mysql://127.0.0.1:3306/know_engine?rewriteBatchedStatements=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      filters: stat,wall
+      connection-properties: druid.stat.mergeSql=true;druid.stat.slowSqlMillis=5000
+      stat-view-servlet:
+        enabled: true
+        url-pattern: /druid/*
+        login-username: admin
+        login-password: admin
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath*:/mapper/**/*.xml
+
+langchain4j:
+  open-ai:
+    chat-model:
+      api-key: @dashscope.api.key@
+      model-name: qwen-max-latest
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      log-requests: true
+      log-responses: true
+    streaming-chat-model:
+      api-key: @dashscope.api.key@
+      model-name: qwen-max-latest
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      log-requests: true
+      log-responses: true
+
+
+minio:
+  url: http://localhost:9000 # 记得改成你自己的
+  accessKey: minioadmin # 记得改成你自己的
+  secretKey: minioadmin # 记得改成你自己的
+  bucketName: know-engine # 记得改成你自己的
+  endpoint: http://localhost:9000 # 记得改成你自己的
+
+# 文件解析服务配置
+file:
+  parse:
+    api:
+      url: http://47.104.64.223:8000 # 文档解析接口地址，记得改成你自己的

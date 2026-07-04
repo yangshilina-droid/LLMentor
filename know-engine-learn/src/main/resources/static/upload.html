@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>文件上传</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #162033;
+      --muted: #667085;
+      --line: #d9e0ea;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --success: #16833a;
+      --error: #c7352d;
+      --surface: #edf2f8;
+      --shadow: 0 18px 50px rgba(22, 32, 51, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+
+    .page {
+      width: min(960px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0 0 24px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    label {
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 12px;
+      color: var(--text);
+      font: inherit;
+      outline: none;
+      background: #fff;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+    }
+
+    .dropzone {
+      display: grid;
+      place-items: center;
+      min-height: 190px;
+      border: 1.5px dashed #9aa8bc;
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 20px;
+      text-align: center;
+      transition: border-color 0.15s ease, background 0.15s ease;
+      cursor: pointer;
+    }
+
+    .dropzone:hover,
+    .dropzone.is-dragging {
+      border-color: var(--primary);
+      background: #e8f0ff;
+    }
+
+    .file-icon {
+      width: 46px;
+      height: 46px;
+      margin: 0 auto 12px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: #dfeaff;
+      color: var(--primary);
+      font-size: 25px;
+      font-weight: 700;
+    }
+
+    .dropzone strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 16px;
+    }
+
+    .dropzone span {
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .selected-file {
+      min-height: 22px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      word-break: break-all;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 22px;
+    }
+
+    button {
+      min-height: 42px;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 18px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 650;
+    }
+
+    .primary {
+      color: #fff;
+      background: var(--primary);
+    }
+
+    .primary:hover {
+      background: var(--primary-dark);
+    }
+
+    .secondary {
+      color: var(--text);
+      background: #e6ebf2;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.62;
+    }
+
+    .progress {
+      height: 8px;
+      overflow: hidden;
+      background: #e6ebf2;
+      border-radius: 999px;
+      margin-top: 18px;
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      background: var(--primary);
+      transition: width 0.2s ease;
+    }
+
+    .status {
+      min-height: 24px;
+      margin-top: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status.success {
+      color: var(--success);
+    }
+
+    .status.error {
+      color: var(--error);
+    }
+
+    .result {
+      min-height: 250px;
+    }
+
+    .result h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    .empty {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    dl {
+      margin: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    dd {
+      margin: 4px 0 0;
+      word-break: break-all;
+      line-height: 1.45;
+    }
+
+    .doc-url {
+      color: var(--primary);
+      text-decoration: none;
+    }
+
+    .doc-url:hover {
+      text-decoration: underline;
+    }
+
+    pre {
+      max-height: 240px;
+      overflow: auto;
+      margin: 16px 0 0;
+      padding: 12px;
+      border-radius: 6px;
+      background: #101828;
+      color: #f8fafc;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        width: min(100% - 24px, 960px);
+        padding: 24px 0;
+      }
+
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .panel {
+        padding: 18px;
+      }
+
+      h1 {
+        font-size: 25px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>文件上传</h1>
+    <p class="subtitle">选择文件后提交到 <code>/api/document/upload</code>，上传成功后会返回并展示文档记录。</p>
+
+    <div class="shell">
+      <section class="panel">
+        <form id="uploadForm">
+          <div class="field">
+            <label for="uploadUser">上传用户</label>
+            <input id="uploadUser" name="uploadUser" type="text" value="admin" autocomplete="off" required>
+          </div>
+
+          <div class="field">
+            <label for="accessibleBy">可见范围</label>
+            <input id="accessibleBy" name="accessibleBy" type="text" placeholder="可选，例如 admin,user 或部门编码" autocomplete="off">
+          </div>
+
+          <div class="field">
+            <label for="fileInput">上传文件</label>
+            <input id="fileInput" name="file" type="file" hidden required>
+            <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-controls="fileInput">
+              <div>
+                <div class="file-icon">↑</div>
+                <strong>点击选择文件或拖拽到这里</strong>
+                <span>单个文件最大按后端配置为 100MB</span>
+                <div id="selectedFile" class="selected-file">尚未选择文件</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="submitBtn" class="primary" type="submit">上传文件</button>
+            <button id="resetBtn" class="secondary" type="button">清空</button>
+          </div>
+
+          <div class="progress" aria-label="上传进度">
+            <div id="progressBar" class="progress-bar"></div>
+          </div>
+          <div id="status" class="status">等待选择文件</div>
+        </form>
+      </section>
+
+      <aside class="panel result">
+        <h2>上传结果</h2>
+        <div id="result" class="empty">暂无上传结果</div>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const fileInput = document.getElementById('fileInput');
+    const dropzone = document.getElementById('dropzone');
+    const selectedFile = document.getElementById('selectedFile');
+    const progressBar = document.getElementById('progressBar');
+    const statusBox = document.getElementById('status');
+    const resultBox = document.getElementById('result');
+    const submitBtn = document.getElementById('submitBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    function formatSize(bytes) {
+      if (!bytes) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+    }
+
+    function setStatus(message, type) {
+      statusBox.textContent = message;
+      statusBox.className = `status${type ? ` ${type}` : ''}`;
+    }
+
+    function setProgress(value) {
+      progressBar.style.width = `${Math.max(0, Math.min(100, value))}%`;
+    }
+
+    function updateSelectedFile() {
+      const file = fileInput.files[0];
+      selectedFile.textContent = file ? `${file.name} (${formatSize(file.size)})` : '尚未选择文件';
+      setStatus(file ? '文件已选择，可以上传' : '等待选择文件');
+    }
+
+    function resetForm() {
+      form.reset();
+      fileInput.value = '';
+      selectedFile.textContent = '尚未选择文件';
+      resultBox.className = 'empty';
+      resultBox.textContent = '暂无上传结果';
+      setProgress(0);
+      setStatus('等待选择文件');
+    }
+
+    function renderResult(data) {
+      const url = data.docUrl || '';
+      resultBox.className = '';
+      resultBox.innerHTML = `
+        <dl>
+          <div><dt>文档 ID</dt><dd>${data.docId ?? '-'}</dd></div>
+          <div><dt>标题</dt><dd>${data.docTitle ?? '-'}</dd></div>
+          <div><dt>上传用户</dt><dd>${data.uploadUser ?? '-'}</dd></div>
+          <div><dt>状态</dt><dd>${data.status ?? '-'}</dd></div>
+          <div><dt>可见范围</dt><dd>${data.accessibleBy || '-'}</dd></div>
+          <div><dt>文档地址</dt><dd>${url ? `<a class="doc-url" href="${url}" target="_blank" rel="noreferrer">${url}</a>` : '-'}</dd></div>
+        </dl>
+        <pre>${JSON.stringify(data, null, 2)}</pre>
+      `;
+    }
+
+    function uploadFile() {
+      const file = fileInput.files[0];
+      if (!file) {
+        setStatus('请先选择要上传的文件', 'error');
+        return;
+      }
+
+      const formData = new FormData(form);
+      const xhr = new XMLHttpRequest();
+
+      submitBtn.disabled = true;
+      setProgress(0);
+      setStatus('正在上传...');
+
+      xhr.open('POST', '/api/document/upload');
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          setProgress((event.loaded / event.total) * 100);
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        submitBtn.disabled = false;
+        const ok = xhr.status >= 200 && xhr.status < 300;
+        let response = xhr.responseText;
+
+        try {
+          response = JSON.parse(xhr.responseText);
+        } catch (error) {
+          response = xhr.responseText;
+        }
+
+        if (ok) {
+          setProgress(100);
+          setStatus('上传成功', 'success');
+          renderResult(response);
+          return;
+        }
+
+        setStatus(`上传失败，HTTP ${xhr.status}`, 'error');
+        resultBox.className = '';
+        resultBox.innerHTML = `<pre>${typeof response === 'string' ? response : JSON.stringify(response, null, 2)}</pre>`;
+      });
+
+      xhr.addEventListener('error', () => {
+        submitBtn.disabled = false;
+        setStatus('网络异常，未能完成上传', 'error');
+      });
+
+      xhr.addEventListener('abort', () => {
+        submitBtn.disabled = false;
+        setStatus('上传已取消', 'error');
+      });
+
+      xhr.send(formData);
+    }
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        fileInput.click();
+      }
+    });
+
+    dropzone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      dropzone.classList.add('is-dragging');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('is-dragging');
+    });
+
+    dropzone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dropzone.classList.remove('is-dragging');
+      if (event.dataTransfer.files.length) {
+        fileInput.files = event.dataTransfer.files;
+        updateSelectedFile();
+      }
+    });
+
+    fileInput.addEventListener('change', updateSelectedFile);
+    resetBtn.addEventListener('click', resetForm);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      uploadFile();
+    });
+  </script>
+</body>
+</html>
