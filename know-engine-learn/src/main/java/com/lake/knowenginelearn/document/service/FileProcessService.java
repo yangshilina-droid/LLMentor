@@ -63,14 +63,15 @@ public class FileProcessService {
             InputStream fileStream = fileStorageService.downloadFile(objectName);
 
             // 生成一串数字，避免文件名的中文乱码
-            String docTitle = document.getDocTitle() + "" + document.getDocTitle().hashCode();
+            String docTitle = String.valueOf(document.getDocTitle().hashCode());
 
             // 4. 调用文档解析
             String parseResult = callFileParseApi(docTitle, fileStream);
 
             String markdownContent = JSON.parseObject(parseResult).getJSONObject("results").getJSONObject(docTitle).getString("md_content");
             // 5. 保存转换后的内容到 MinIO（这里假设解析结果是文本或 JSON）
-            String convertedObjectName = "converted/" + document.getDocTitle().substring(0, document.getDocTitle().lastIndexOf(".") + 1) + ".md";
+            // String convertedObjectName = "converted/" + document.getDocTitle().substring(0, document.getDocTitle().lastIndexOf(".") + 1) + ".md";
+            String convertedObjectName = "converted/" + (document.getDocTitle().lastIndexOf(".") > 0 ? document.getDocTitle().substring(0, document.getDocTitle().lastIndexOf(".")) : document.getDocTitle()) + ".md";
             String convertedUrl = fileStorageService.uploadFile(
                     convertedObjectName,
                     markdownContent.getBytes(),

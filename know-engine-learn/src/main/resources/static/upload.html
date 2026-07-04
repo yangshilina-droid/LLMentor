@@ -381,20 +381,47 @@
       setStatus('等待选择文件');
     }
 
+    function appendField(list, label, value, linkUrl) {
+      const item = document.createElement('div');
+      const term = document.createElement('dt');
+      const detail = document.createElement('dd');
+
+      term.textContent = label;
+      if (linkUrl) {
+        const link = document.createElement('a');
+        link.className = 'doc-url';
+        link.href = linkUrl;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        link.textContent = linkUrl;
+        detail.appendChild(link);
+      } else {
+        detail.textContent = value || '-';
+      }
+
+      item.append(term, detail);
+      list.appendChild(item);
+    }
+
+    function renderRaw(value) {
+      const pre = document.createElement('pre');
+      pre.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      return pre;
+    }
+
     function renderResult(data) {
       const url = data.docUrl || '';
+      const list = document.createElement('dl');
+
+      appendField(list, '文档 ID', data.docId);
+      appendField(list, '标题', data.docTitle);
+      appendField(list, '上传用户', data.uploadUser);
+      appendField(list, '状态', data.status);
+      appendField(list, '可见范围', data.accessibleBy);
+      appendField(list, '文档地址', url, url);
+
       resultBox.className = '';
-      resultBox.innerHTML = `
-        <dl>
-          <div><dt>文档 ID</dt><dd>${data.docId ?? '-'}</dd></div>
-          <div><dt>标题</dt><dd>${data.docTitle ?? '-'}</dd></div>
-          <div><dt>上传用户</dt><dd>${data.uploadUser ?? '-'}</dd></div>
-          <div><dt>状态</dt><dd>${data.status ?? '-'}</dd></div>
-          <div><dt>可见范围</dt><dd>${data.accessibleBy || '-'}</dd></div>
-          <div><dt>文档地址</dt><dd>${url ? `<a class="doc-url" href="${url}" target="_blank" rel="noreferrer">${url}</a>` : '-'}</dd></div>
-        </dl>
-        <pre>${JSON.stringify(data, null, 2)}</pre>
-      `;
+      resultBox.replaceChildren(list, renderRaw(data));
     }
 
     function uploadFile() {
@@ -439,7 +466,7 @@
 
         setStatus(`上传失败，HTTP ${xhr.status}`, 'error');
         resultBox.className = '';
-        resultBox.innerHTML = `<pre>${typeof response === 'string' ? response : JSON.stringify(response, null, 2)}</pre>`;
+        resultBox.replaceChildren(renderRaw(response));
       });
 
       xhr.addEventListener('error', () => {

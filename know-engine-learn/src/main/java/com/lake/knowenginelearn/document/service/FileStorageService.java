@@ -48,13 +48,15 @@ public class FileStorageService {
 
     // 上传文件
     public String uploadFile(MultipartFile file, String objectName) throws Exception {
-        createBucketIfNotExists(true);// 这里可根据你自己的情况改成false，如果改成false，需要在这个方法最后调一次getPresignedUrl
+        // 这里可根据你自己的情况改成false，如果改成false，需要在这个方法最后调一次getPresignedUrl
+        createBucketIfNotExists(true);
         minioClient.putObject(PutObjectArgs.builder()
                 .bucket(bucketName)
                 .object(objectName)
                 .stream(file.getInputStream(), file.getSize(), -1)
                 .contentType(file.getContentType())
                 .build());
+        // 返回文件下载路径
         return String.format("%s/%s/%s", endpoint, bucketName, objectName);
 
     }
