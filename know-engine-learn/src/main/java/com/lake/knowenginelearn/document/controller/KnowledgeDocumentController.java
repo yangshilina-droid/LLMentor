@@ -67,13 +67,14 @@ public class KnowledgeDocumentController {
             // 如果是 PDF 文件（通过后缀或文件头判断），异步调用转换处理
             if (isPdfFile(fileName) || isPdfContent(file)) {
                 try {
-                    fileProcessService.processDocument(document);
+                    fileProcessService.processDocument(document, file.getInputStream());
                 } catch (Exception e) {
                     // 转换失败不影响上传结果，仅记录日志
                     System.err.println("PDF 转换处理失败，documentId: " + document.getDocId() + ", error: " + e.getMessage());
                 }
-            } else {
-                // 更新文档状态为已转换
+            }
+            // 非pdf文件，更新文档状态为已转换
+            else {
                 document.setStatus(DocumentStatus.CONVERTED);
                 document.setConvertedDocUrl(fileUrl);
                 knowledgeDocumentService.updateById(document);
