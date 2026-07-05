@@ -47,12 +47,12 @@ public class KnowledgeDocumentController {
             @RequestParam("uploadUser") String uploadUser,
             @RequestParam(value = "accessibleBy", required = false) String accessibleBy) throws IOException {
 
-        //用minio上传
         try {
+            // 用minio上传
             String fileName = file.getOriginalFilename();
             String fileUrl = fileStorageService.uploadFile(file, fileName);
 
-            // 4. 构建文档记录
+            // 构建文档记录
             KnowledgeDocument document = new KnowledgeDocument();
             document.setDocTitle(fileName);
             document.setUploadUser(uploadUser);
@@ -61,10 +61,10 @@ public class KnowledgeDocumentController {
             //todo permission处理
             document.setAccessibleBy(accessibleBy);
 
-            // 5. 保存到数据库
+            // 保存到数据库
             knowledgeDocumentService.save(document);
 
-            // 6. 如果是 PDF 文件（通过后缀或文件头判断），异步调用转换处理
+            // 如果是 PDF 文件（通过后缀或文件头判断），异步调用转换处理
             if (isPdfFile(fileName) || isPdfContent(file)) {
                 try {
                     fileProcessService.processDocument(document);
@@ -72,6 +72,11 @@ public class KnowledgeDocumentController {
                     // 转换失败不影响上传结果，仅记录日志
                     System.err.println("PDF 转换处理失败，documentId: " + document.getDocId() + ", error: " + e.getMessage());
                 }
+            } else {
+                // 更新文档状态为已转换
+                document.setStatus(DocumentStatus.CONVERTED);
+                document.setConvertedDocUrl(fileUrl);
+                knowledgeDocumentService.updateById(document);
             }
 
             return document;
