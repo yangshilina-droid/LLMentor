@@ -1,20 +1,31 @@
 package com.lake.knowenginelearn.document.controller;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
+import com.lake.knowenginelearn.document.constant.SegmentStatus;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
+import com.lake.knowenginelearn.document.entity.KnowledgeSegment;
 import com.lake.knowenginelearn.document.service.FileProcessService;
 import com.lake.knowenginelearn.document.service.FileStorageService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
+import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
+import com.lake.knowenginelearn.rag.modules.splitter.MarkdownHeaderParentTextSplitter;
+import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.segment.TextSegment;
 import lombok.RequiredArgsConstructor;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 @RestController
@@ -24,6 +35,12 @@ public class KnowledgeDocumentController {
 
     @Autowired
     private KnowledgeDocumentService knowledgeDocumentService;
+
+    @Autowired
+    private KnowledgeSegmentService knowledgeSegmentService;
+
+    @Value("${minio.bucketName}")
+    private String bucketName;
 
     @Autowired
     private FileStorageService fileStorageService;
@@ -87,39 +104,100 @@ public class KnowledgeDocumentController {
     }
 
     /**
-     * 分页查询
+     * 对文档进行切分，使用 MarkdownHeaderParentTextSplitter
+     *
+     * @param documentId 文档ID
+     * @return 切分后的片段数量
      */
-    @GetMapping("/page")
-    public Page<KnowledgeDocument> page(
-            @RequestParam(defaultValue = "1") Integer current,
-            @RequestParam(defaultValue = "10") Integer size) {
-        return knowledgeDocumentService.page(new Page<>(current, size));
+    @PostMapping("/split/{documentId}")
+    @Transactional
+    public Integer splitDocument(@PathVariable Long documentId) {
+        // 1. 查询文档
+        KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
+        Assert.notNull(document, "文档不存在");
+        Assert.notNull(document.getConvertedDocUrl(), "文档未转换完成");
+
+        if (document.getStatus() == DocumentStatus.CHUNKED) {
+            // 返回已切分的分段数量
+            Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
+                    .eq("document_id", documentId)
+                    .eq("skipEmbedding", 0));
+
+            return chunkedCount.intValue();
+        }
+
+        if(document.getStatus() != DocumentStatus.CONVERTED){
+            throw new RuntimeException("文档状态不为CONVERTED，无法完成切分");
+        }
+
+        // 2. 从MinIO下载文件内容
+        String convertedDocUrl = document.getConvertedDocUrl();
+        String objectName = extractObjectNameFromUrl(convertedDocUrl);
+        Assert.notNull(objectName, "无法解析文档URL");
+
+        String content;
+        try (InputStream inputStream = fileStorageService.downloadFile(objectName)) {
+            content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("下载文档失败: " + e.getMessage(), e);
+        }
+
+        // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分
+        MarkdownHeaderParentTextSplitter splitter = new MarkdownHeaderParentTextSplitter(1000, 100);
+        Document doc = Document.from(content);
+        List<TextSegment> segments = splitter.split(doc);
+
+        // 4. 转换为 KnowledgeSegment 并保存
+        List<KnowledgeSegment> knowledgeSegments = new ArrayList<>();
+        for (int i = 0; i < segments.size(); i++) {
+            TextSegment segment = segments.get(i);
+            KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
+            knowledgeSegment.setText(segment.text());
+            knowledgeSegment.setChunkId(segment.metadata().getString("chunkId"));
+            knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
+            knowledgeSegment.setDocumentId(documentId);
+            knowledgeSegment.setChunkOrder(i);
+            knowledgeSegment.setStatus(SegmentStatus.INIT);
+
+            // 检查是否需要跳过嵌入
+            Integer skipEmbedding = segment.metadata().getInteger("skipEmbedding");
+            if (skipEmbedding != null && skipEmbedding == 1) {
+                knowledgeSegment.setSkipEmbedding(1);
+            } else {
+                knowledgeSegment.setSkipEmbedding(0);
+            }
+
+            knowledgeSegments.add(knowledgeSegment);
+        }
+
+        // 5. 批量保存片段
+        boolean saveResult = knowledgeSegmentService.saveBatch(knowledgeSegments);
+        Assert.isTrue(saveResult, "保存知识片段失败");
+
+        // 6. 更新文档状态为 CHUNKED
+        document.setStatus(DocumentStatus.CHUNKED);
+        boolean updateResult = knowledgeDocumentService.updateById(document);
+        Assert.isTrue(updateResult, "更新文档状态失败");
+
+        return knowledgeSegments.size();
     }
 
     /**
-     * 根据ID查询
+     * 从MinIO URL中提取对象名称
+     *
+     * @param url MinIO文件URL
+     * @return 对象名称
      */
-    @GetMapping("/{id}")
-    public KnowledgeDocument getById(@PathVariable Long id) {
-        return knowledgeDocumentService.getById(id);
-    }
-
-    /**
-     * 根据状态查询列表
-     */
-    @GetMapping("/list-by-status")
-    public List<KnowledgeDocument> listByStatus(@RequestParam String status) {
-        QueryWrapper<KnowledgeDocument> wrapper = new QueryWrapper<>();
-        wrapper.eq("status", status);
-        return knowledgeDocumentService.list(wrapper);
-    }
-
-    /**
-     * 根据ID删除
-     */
-    @DeleteMapping("/{id}")
-    public boolean removeById(@PathVariable Long id) {
-        return knowledgeDocumentService.removeById(id);
+    private String extractObjectNameFromUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return null;
+        }
+        // URL格式: http://endpoint/bucketName/objectName
+        int lastSlashIndex = url.lastIndexOf(bucketName) + bucketName.length();
+        if (lastSlashIndex == -1 || lastSlashIndex == url.length() - 1) {
+            return null;
+        }
+        return url.substring(lastSlashIndex + 1);
     }
 
 
