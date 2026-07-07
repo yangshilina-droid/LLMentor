@@ -1,10 +1,14 @@
 package com.lake.knowenginelearn.document.entity;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lake.knowenginelearn.document.constant.SegmentStatus;
 import lombok.Data;
+
+import java.util.Map;
 
 /**
  * 知识片段表
@@ -58,4 +62,9 @@ public class KnowledgeSegment {
      * 是否跳过嵌入生成
      */
     private Integer skipEmbedding;
+
+    @JsonIgnore
+    public Map<String, String> getMetadataMap() {
+        return metadata == null ? null : JSON.parseObject(metadata, Map.class);
+    }
 }

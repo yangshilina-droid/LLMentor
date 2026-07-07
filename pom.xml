@@ -59,6 +59,7 @@
 	<modules>
 		<module>spring-ai</module>
         <module>lagchain4j</module>
+        <module>know-engine-learn</module>
 	</modules>
 
 </project>

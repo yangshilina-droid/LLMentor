@@ -168,7 +168,11 @@ public class FileProcessService {
             httpPost.setHeader("Accept", "application/json");
 
             // 构建 multipart 请求体
-            HttpEntity multipartEntity = MultipartEntityBuilder.create().addBinaryBody("files", fileStream, org.apache.hc.core5.http.ContentType.APPLICATION_OCTET_STREAM, fileName).addTextBody("backend", "pipeline").addTextBody("response_format_zip", "false").addTextBody("return_images", "false").addTextBody("return_model_output", "false").addTextBody("return_middle_json", "false").build();
+            HttpEntity multipartEntity = MultipartEntityBuilder.create()
+                    .addBinaryBody("files", fileStream, org.apache.hc.core5.http.ContentType.APPLICATION_OCTET_STREAM, fileName)
+                    .addTextBody("backend", "pipeline").addTextBody("response_format_zip", "true")
+                    .addTextBody("return_images", "true").addTextBody("return_model_output", "false")
+                    .addTextBody("return_middle_json", "false").build();
 
             httpPost.setEntity(multipartEntity);
 

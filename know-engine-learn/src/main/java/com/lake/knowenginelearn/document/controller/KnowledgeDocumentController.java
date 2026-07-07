@@ -160,6 +160,7 @@ public class KnowledgeDocumentController {
             KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
             knowledgeSegment.setText(segment.text());
             knowledgeSegment.setChunkId(segment.metadata().getString("chunkId"));
+            //todo metadata 还需要增加更多的东西
             knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
             knowledgeSegment.setDocumentId(documentId);
             knowledgeSegment.setChunkOrder(i);
@@ -177,6 +178,7 @@ public class KnowledgeDocumentController {
         }
 
         // 5. 批量保存片段
+        //todo 性能问题优化
         boolean saveResult = knowledgeSegmentService.saveBatch(knowledgeSegments);
         Assert.isTrue(saveResult, "保存知识片段失败");
 
@@ -186,6 +188,11 @@ public class KnowledgeDocumentController {
         Assert.isTrue(updateResult, "更新文档状态失败");
 
         return knowledgeSegments.size();
+    }
+
+    @PostMapping("/embedding")
+    public String embedding(Long docId) {
+        return knowledgeDocumentService.embeddingAndStore(docId) ? "success" : "failed";
     }
 
     /**
