@@ -57,6 +57,11 @@ public class KnowledgeDocumentController {
      * @param uploadUser   上传用户
      * @param accessibleBy 可见范围（可选）
      * @return 保存后的文档记录
+     *
+     * 文件转换
+     * -pdf文件需要使用MinerU转换为md文件
+     * -其他文件，如word 不用转换
+     *
      */
     @PostMapping("/upload")
     public KnowledgeDocument uploadFile(
@@ -142,7 +147,8 @@ public class KnowledgeDocumentController {
             throw new RuntimeException("下载文档失败: " + e.getMessage(), e);
         }
 
-        // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分
+        // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分 langchain4j
+        // 根据经验设置chunkSize, overlap
         MarkdownHeaderParentTextSplitter splitter = new MarkdownHeaderParentTextSplitter(1000, 100);
         Document doc = Document.from(content);
         List<TextSegment> segments = splitter.split(doc);
