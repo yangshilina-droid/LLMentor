@@ -196,6 +196,18 @@ public class KnowledgeDocumentController {
     }
 
     /**
+     * 图片转描述
+     * url需要是公网的oss地址，本地地址localhost LLM无法访问
+     *
+     * @param url
+     * @return
+     */
+    @GetMapping("/image-desc")
+    public String getImageDesc(String url) {
+        return fileProcessService.generateImageDescription(url);
+    }
+
+    /**
      * 从MinIO URL中提取对象名称
      *
      * @param url MinIO文件URL
