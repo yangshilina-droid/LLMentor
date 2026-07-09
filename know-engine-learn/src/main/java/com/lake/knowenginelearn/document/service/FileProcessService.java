@@ -437,6 +437,9 @@ public class FileProcessService {
     @Value("${langchain4j.open-ai.chat-model.base-url}")
     private String chatModelBaseUrl;
 
+    @Value("${langchain4j.open-ai.chat-model.model-name}")
+    private String chatModelName;
+
     /**
      * 生成图片描述
      * 需要注意的是，如果你用的是外部的模型，这个url需要是公网可以访问的url。否则模型需要能和MinIO进行内网通信。
@@ -445,7 +448,7 @@ public class FileProcessService {
         OpenAiChatModel chatModel = OpenAiChatModel.builder()
                 .apiKey(chatModelApiKey)
                 .baseUrl(chatModelBaseUrl)
-                .modelName("qwen3-vl-plus")
+                .modelName(chatModelName)
                 .temperature(0.7)
                 .logResponses(true)
                 .logRequests(true)
