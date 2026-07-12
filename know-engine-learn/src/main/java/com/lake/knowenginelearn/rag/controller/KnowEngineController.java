@@ -44,8 +44,8 @@ public class KnowEngineController {
         embeddingStore.add(embedding2, segment2);
 
         Embedding queryEmbedding = openAiEmbeddingModel.embed("What is your favourite sport?").content();
-
-        Filter version = metadataKey("version").isEqualTo("1");
+        // 利用metadata做数据过滤
+        Filter version = metadataKey("version").isEqualTo("2");
 
         EmbeddingSearchResult<TextSegment> relevant = embeddingStore.search(
                 EmbeddingSearchRequest.builder()
