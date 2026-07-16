@@ -197,7 +197,7 @@ public class KnowledgeDocumentController {
 
     /**
      * 图片转描述
-     * url需要是公网的oss地址，本地地址localhost LLM无法访问
+     * todo url需要是公网的oss地址，本地地址localhost LLM无法访问
      *
      * @param url
      * @return

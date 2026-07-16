@@ -61,10 +61,11 @@ public class KnowledgeDocumentServiceImpl
 
         while (page.getCurrent() == 1 || page.hasNext()) {
             List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
+            // 构造文本，带元数据
             List<TextSegment> textSegments = textSegmentsToEmbed.stream()
                     .map(segment -> TextSegment.from(segment.getText(), Metadata.from(segment.getMetadataMap())))
                     .toList();
-            // 获取嵌入向量
+            // 获取嵌入向量-向量模型
             Response<List<Embedding>> embeddingResponse = openAiEmbeddingModel.embedAll(textSegments);
 
             // 存储嵌入向量
