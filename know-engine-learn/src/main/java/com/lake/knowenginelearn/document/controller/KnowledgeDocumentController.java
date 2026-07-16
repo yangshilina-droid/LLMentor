@@ -1,35 +1,29 @@
 package com.lake.knowenginelearn.document.controller;
 
-import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.lake.knowenginelearn.document.constant.DocumentStatus;
-import com.lake.knowenginelearn.document.constant.SegmentStatus;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
-import com.lake.knowenginelearn.document.entity.KnowledgeSegment;
+import com.lake.knowenginelearn.document.service.DocumentProcessService;
 import com.lake.knowenginelearn.document.service.FileProcessService;
-import com.lake.knowenginelearn.document.service.FileStorageService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
-import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
-import com.lake.knowenginelearn.rag.modules.splitter.MarkdownHeaderParentTextSplitter;
-import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import lombok.RequiredArgsConstructor;
-import org.apache.tika.Tika;
+import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingSearchResult;
+import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchEmbeddingStore;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.Assert;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 知识文档表 Controller
+ */
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/document")
 public class KnowledgeDocumentController {
 
@@ -37,18 +31,10 @@ public class KnowledgeDocumentController {
     private KnowledgeDocumentService knowledgeDocumentService;
 
     @Autowired
-    private KnowledgeSegmentService knowledgeSegmentService;
-
-    @Value("${minio.bucketName}")
-    private String bucketName;
-
-    @Autowired
-    private FileStorageService fileStorageService;
+    private DocumentProcessService documentProcessService;
 
     @Autowired
     private FileProcessService fileProcessService;
-
-    private final Tika tika = new Tika();
 
     /**
      * 文件上传接口
@@ -57,199 +43,111 @@ public class KnowledgeDocumentController {
      * @param uploadUser   上传用户
      * @param accessibleBy 可见范围（可选）
      * @return 保存后的文档记录
-     *
-     * 文件转换
-     * -pdf文件需要使用MinerU转换为md文件
-     * -其他文件，如word 不用转换
-     *
      */
     @PostMapping("/upload")
     public KnowledgeDocument uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("uploadUser") String uploadUser,
             @RequestParam(value = "accessibleBy", required = false) String accessibleBy) throws IOException {
-
-        try {
-            // 用minio上传
-            String fileName = file.getOriginalFilename();
-            String fileUrl = fileStorageService.uploadFile(file, fileName);
-
-            // 构建文档记录
-            KnowledgeDocument document = new KnowledgeDocument();
-            document.setDocTitle(fileName);
-            document.setUploadUser(uploadUser);
-            document.setDocUrl(fileUrl);
-            document.setStatus(DocumentStatus.UPLOADED);
-            //todo permission处理
-            document.setAccessibleBy(accessibleBy);
-
-            // 保存到数据库
-            knowledgeDocumentService.save(document);
-
-            // 如果是 PDF 文件（通过后缀或文件头判断），异步调用转换处理
-            if (isPdfFile(fileName) || isPdfContent(file)) {
-                try {
-                    fileProcessService.processDocument(document, file.getInputStream());
-                } catch (Exception e) {
-                    // 转换失败不影响上传结果，仅记录日志
-                    System.err.println("PDF 转换处理失败，documentId: " + document.getDocId() + ", error: " + e.getMessage());
-                }
-            }
-            // 非pdf文件，更新文档状态为已转换
-            else {
-                document.setStatus(DocumentStatus.CONVERTED);
-                document.setConvertedDocUrl(fileUrl);
-                knowledgeDocumentService.updateById(document);
-            }
-
-            return document;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        return documentProcessService.uploadFile(file, uploadUser, accessibleBy);
     }
 
     /**
-     * 对文档进行切分，使用 MarkdownHeaderParentTextSplitter
+     * 对文档进行切分
+     * 注意：此方法为手动触发切分接口，正常流程由事件驱动自动执行
      *
      * @param documentId 文档ID
      * @return 切分后的片段数量
      */
     @PostMapping("/split/{documentId}")
-    @Transactional
     public Integer splitDocument(@PathVariable Long documentId) {
-        // 1. 查询文档
-        KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-        Assert.notNull(document, "文档不存在");
-        Assert.notNull(document.getConvertedDocUrl(), "文档未转换完成");
-
-        if (document.getStatus() == DocumentStatus.CHUNKED) {
-            // 返回已切分的分段数量
-            Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
-                    .eq("document_id", documentId)
-                    .eq("skipEmbedding", 0));
-
-            return chunkedCount.intValue();
-        }
-
-        if(document.getStatus() != DocumentStatus.CONVERTED){
-            throw new RuntimeException("文档状态不为CONVERTED，无法完成切分");
-        }
-
-        // 2. 从MinIO下载文件内容
-        String convertedDocUrl = document.getConvertedDocUrl();
-        String objectName = extractObjectNameFromUrl(convertedDocUrl);
-        Assert.notNull(objectName, "无法解析文档URL");
-
-        String content;
-        try (InputStream inputStream = fileStorageService.downloadFile(objectName)) {
-            content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("下载文档失败: " + e.getMessage(), e);
-        }
-
-        // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分 langchain4j
-        // 根据经验设置chunkSize, overlap
-        MarkdownHeaderParentTextSplitter splitter = new MarkdownHeaderParentTextSplitter(1000, 100);
-        Document doc = Document.from(content);
-        List<TextSegment> segments = splitter.split(doc);
-
-        // 4. 转换为 KnowledgeSegment 并保存
-        List<KnowledgeSegment> knowledgeSegments = new ArrayList<>();
-        for (int i = 0; i < segments.size(); i++) {
-            TextSegment segment = segments.get(i);
-            KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
-            knowledgeSegment.setText(segment.text());
-            knowledgeSegment.setChunkId(segment.metadata().getString("chunkId"));
-            //todo metadata 还需要增加更多的东西
-            knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
-            knowledgeSegment.setDocumentId(documentId);
-            knowledgeSegment.setChunkOrder(i);
-            knowledgeSegment.setStatus(SegmentStatus.INIT);
-
-            // 检查是否需要跳过嵌入
-            Integer skipEmbedding = segment.metadata().getInteger("skipEmbedding");
-            if (skipEmbedding != null && skipEmbedding == 1) {
-                knowledgeSegment.setSkipEmbedding(1);
-            } else {
-                knowledgeSegment.setSkipEmbedding(0);
-            }
-
-            knowledgeSegments.add(knowledgeSegment);
-        }
-
-        // 5. 批量保存片段
-        //todo 性能问题优化
-        boolean saveResult = knowledgeSegmentService.saveBatch(knowledgeSegments);
-        Assert.isTrue(saveResult, "保存知识片段失败");
-
-        // 6. 更新文档状态为 CHUNKED
-        document.setStatus(DocumentStatus.CHUNKED);
-        boolean updateResult = knowledgeDocumentService.updateById(document);
-        Assert.isTrue(updateResult, "更新文档状态失败");
-
-        return knowledgeSegments.size();
-    }
-
-    @PostMapping("/embedding")
-    public String embedding(Long docId) {
-        return knowledgeDocumentService.embeddingAndStore(docId) ? "success" : "failed";
+        return documentProcessService.splitDocument(documentId);
     }
 
     /**
-     * 图片转描述
-     * todo url需要是公网的oss地址，本地地址localhost LLM无法访问
+     * 向量化并存储
+     * 注意：此方法为手动触发向量化接口，正常流程由事件驱动自动执行
      *
-     * @param url
-     * @return
+     * @param docId 文档ID
+     * @return 结果
+     */
+    @PostMapping("/embedding")
+    public String embedding(Long docId) {
+        return documentProcessService.embeddingAndStore(docId) ? "success" : "failed";
+    }
+
+    /**
+     * 分页查询
+     */
+    @GetMapping("/page")
+    public Page<KnowledgeDocument> page(
+            @RequestParam(defaultValue = "1") Integer current,
+            @RequestParam(defaultValue = "10") Integer size) {
+        return knowledgeDocumentService.page(new Page<>(current, size));
+    }
+
+    /**
+     * 根据ID查询
+     */
+    @GetMapping("/{id:\\d+}")
+    public KnowledgeDocument getById(@PathVariable Long id) {
+        return knowledgeDocumentService.getById(id);
+    }
+
+    /**
+     * 根据状态查询列表
+     */
+    @GetMapping("/list-by-status")
+    public List<KnowledgeDocument> listByStatus(@RequestParam String status) {
+        QueryWrapper<KnowledgeDocument> wrapper = new QueryWrapper<>();
+        wrapper.eq("status", status);
+        return knowledgeDocumentService.list(wrapper);
+    }
+
+    /**
+     * 获取图片描述
+     * 用于测试
+     *
+     * @param url 图片URL
+     * @return 图片描述
      */
     @GetMapping("/image-desc")
     public String getImageDesc(String url) {
         return fileProcessService.generateImageDescription(url);
     }
 
+    @Autowired
+    private OpenAiEmbeddingModel openAiEmbeddingModel;
+
+    @Autowired
+    private ElasticsearchEmbeddingStore embeddingStore;
+
     /**
-     * 从MinIO URL中提取对象名称
+     * 根据查询问题返回相关文档
      *
-     * @param url MinIO文件URL
-     * @return 对象名称
+     * 主要用于测试
+     * @param query
+     * @return
      */
-    private String extractObjectNameFromUrl(String url) {
-        if (url == null || url.isEmpty()) {
-            return null;
-        }
-        // URL格式: http://endpoint/bucketName/objectName
-        int lastSlashIndex = url.lastIndexOf(bucketName) + bucketName.length();
-        if (lastSlashIndex == -1 || lastSlashIndex == url.length() - 1) {
-            return null;
-        }
-        return url.substring(lastSlashIndex + 1);
-    }
+    @GetMapping("/askDocument")
+    public String askDocument(String query) {
+        Embedding queryEmbedding = openAiEmbeddingModel.embed(query).content();
 
+        EmbeddingSearchResult<TextSegment> relevant = embeddingStore.search(
+                EmbeddingSearchRequest.builder()
+                        .queryEmbedding(queryEmbedding)
+                        .minScore(0.7)
+                        .build());
 
-    /**
-     * 通过后缀名判断是否为 PDF 文件
-     * @param fileName 文件名
-     * @return true 如果是 PDF 文件
-     */
-    private boolean isPdfFile(String fileName) {
-        if (fileName == null || fileName.isEmpty()) {
-            return false;
-        }
-        return fileName.toLowerCase().endsWith(".pdf");
-    }
+        if (relevant.matches().size() > 0) {
+            EmbeddingMatch<TextSegment> embeddingMatch = relevant.matches().get(0);
 
-    /**
-     * 通过 Apache Tika 检测文件内容类型判断是否为 PDF 文件
-     * @param file 上传的文件
-     * @return true 如果是 PDF 文件
-     */
-    private boolean isPdfContent(MultipartFile file) {
-        try (InputStream is = file.getInputStream()) {
-            String mimeType = tika.detect(is);
-            return "application/pdf".equals(mimeType);
-        } catch (IOException e) {
-            System.err.println("文件类型检测失败: " + e.getMessage());
-            return false;
+            System.out.println(embeddingMatch.score());
+            System.out.println(embeddingMatch.embedded().text());
+
+            return embeddingMatch.embedded().text();
+        } else {
+            return "No relevant documents found.";
         }
     }
 }

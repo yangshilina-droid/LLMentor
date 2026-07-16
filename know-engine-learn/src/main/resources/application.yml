@@ -77,3 +77,12 @@ file:
   parse:
     api:
       url: http://127.0.0.1:8000 # 文档解析接口地址，记得改成你自己的
+
+# XXL-Job 配置
+xxl:
+  job:
+    admin:
+      addresses: http://127.0.0.1:8080/xxl-job-admin # xxl-job-admin 地址，记得改成你自己的
+    accessToken: default_token
+    executor:
+      appname: know-engine-executor # 执行器名称

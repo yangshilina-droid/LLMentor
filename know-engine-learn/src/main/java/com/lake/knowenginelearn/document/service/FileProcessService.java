@@ -417,7 +417,7 @@ public class FileProcessService {
                 continue;
             }
 
-            // 生成图片描述（mock 实现）LLM
+            // todo 生成图片描述（mock 实现）LLM
             String imageDescription = generateImageDescription(minioUrl);
 
             // 构建新的图片标签: ![描述](minio_url)
