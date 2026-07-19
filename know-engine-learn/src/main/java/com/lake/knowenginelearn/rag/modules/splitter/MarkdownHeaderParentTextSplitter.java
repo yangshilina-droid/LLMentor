@@ -18,6 +18,26 @@ import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.*;
  * @author andyflury （https://github.com/langchain4j/langchain4j/issues/574 ）
  * @author Hollis, 增加对父子分段的支持
  */
+
+/**
+ * 整体处理流程：
+ *
+ * 输入 Markdown 文档
+ *     ↓
+ * 删除空行
+ *     ↓
+ * 逐行识别 Markdown 标题
+ *     ↓
+ * 通过标题栈维护标题层级元数据
+ *     ↓
+ * 按照标题生成原始分块
+ *     ↓
+ * 根据 returnEachLine 决定是否聚合
+ *     ↓
+ * 对超过 chunkSize 的块二次切分
+ *     ↓
+ * 生成 TextSegment 列表
+ */
 public class MarkdownHeaderParentTextSplitter implements DocumentSplitter {
 
     private static final Map<String, String> DEFAULT_HEADERS_TO_SPLIT = new HashMap<>();
@@ -68,6 +88,12 @@ public class MarkdownHeaderParentTextSplitter implements DocumentSplitter {
 
     }
 
+    /**
+     * 原始块长度 > 1000
+     *
+     * 按 1000 字符、重叠 100 字符生成子块
+     * 100字符重叠只能缓解语义被截断的问题，不能完全避免。更完善的实现通常会优先在段落、换行或句号附近寻找切分位置
+     */
     public MarkdownHeaderParentTextSplitter(int chunkSize, int overlap) {
         this(DEFAULT_HEADERS_TO_SPLIT, true, false, chunkSize, overlap);
     }
@@ -324,6 +350,16 @@ public class MarkdownHeaderParentTextSplitter implements DocumentSplitter {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Markdown 标题分块长度不超过 1000 字符：不设置 skipEmbedding
+     * 在 splitDocument() 中最终落库为 0
+     *
+     * 长度超过 1000 字符：原始完整块作为父块保留
+     * - 父块 metadata 设置 skipEmbedding = 1
+     * 原始块再切成最大 1000 字符、相邻重叠 100 字符的子块
+     * 子块不设置该字段，因此最终落库为 skipEmbedding = 0
+     * 子块通过 parentChunkId 指向完整父块
+     */
     /**
      * 对超出 chunkSize 的分片进行二次切割
      * <p>

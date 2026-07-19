@@ -163,6 +163,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             throw new RuntimeException("下载文档失败: " + e.getMessage(), e);
         }
 
+        // todo 切分逻辑
         // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分
         MarkdownHeaderParentTextSplitter splitter = new MarkdownHeaderParentTextSplitter(1000, 100);
         Document doc = Document.from(content);

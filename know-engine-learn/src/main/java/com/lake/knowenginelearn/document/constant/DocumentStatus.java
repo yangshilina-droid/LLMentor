@@ -6,5 +6,10 @@ package com.lake.knowenginelearn.document.constant;
  * @date 2026-07-04 11:44
  */
 public enum DocumentStatus {
-    INIT, UPLOADED, CONVERTING, CONVERTED, CHUNKED, VECTOR_STORED;
+    // INIT,
+    UPLOADED,
+    CONVERTING,
+    CONVERTED,
+    CHUNKED,
+    VECTOR_STORED;
 }
