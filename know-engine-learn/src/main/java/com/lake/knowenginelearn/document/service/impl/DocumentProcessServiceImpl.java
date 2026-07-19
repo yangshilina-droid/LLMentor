@@ -101,7 +101,8 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
                 Assert.isTrue(result, "文件状态更新失败");
             }
 
-            // publishConvertedEvent(document);
+            // 发送文档已转换事件，执行分段
+            publishConvertedEvent(document);
             return document;
         } catch (Exception e) {
             throw new IOException("文件上传失败: " + e.getMessage(), e);
