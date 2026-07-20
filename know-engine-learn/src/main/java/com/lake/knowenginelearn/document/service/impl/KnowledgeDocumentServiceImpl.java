@@ -50,10 +50,10 @@ public class KnowledgeDocumentServiceImpl
 
         //todo 状态的校验
 
-        //分页扫描全部document_id为docId且status为INIT的文档片段
+        //分页扫描全部document_id为docId且status为STORED的文档片段
         LambdaQueryWrapper<KnowledgeSegment> queryWrapper = Wrappers.<KnowledgeSegment>lambdaQuery()
                 .eq(KnowledgeSegment::getDocumentId, docId)
-                .eq(KnowledgeSegment::getStatus, SegmentStatus.INIT)
+                .eq(KnowledgeSegment::getStatus, SegmentStatus.STORED)
                 .isNull(KnowledgeSegment::getEmbeddingId)
                 .eq(KnowledgeSegment::getSkipEmbedding, 0);
 

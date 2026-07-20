@@ -31,7 +31,7 @@ public interface DocumentProcessService {
      * @param documentId 文档ID
      * @return 切分后的片段数量
      */
-    int splitDocument(Long documentId);
+    int splitDocument(KnowledgeDocument document);
 
     /**
      * 向量化并存储

@@ -61,7 +61,8 @@ public class KnowledgeDocumentController {
      */
     @PostMapping("/split/{documentId}")
     public Integer splitDocument(@PathVariable Long documentId) {
-        return documentProcessService.splitDocument(documentId);
+        KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
+        return documentProcessService.splitDocument(document);
     }
 
     /**

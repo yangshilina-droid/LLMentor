@@ -15,7 +15,7 @@ import java.util.Map;
  */
 @Data
 @TableName("knowledge_segment")
-public class KnowledgeSegment {
+public class KnowledgeSegment extends BaseEntity {
 
     /**
      * 片段ID
@@ -54,7 +54,7 @@ public class KnowledgeSegment {
     private String embeddingId;
 
     /**
-     * 状态：INIT, VECTOR_STORED
+     * 状态：STORED, VECTOR_STORED
      */
     private SegmentStatus status;
 

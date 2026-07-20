@@ -5,13 +5,13 @@ import com.xxl.job.core.executor.impl.XxlJobSpringExecutor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 
 /**
  * XXL-Job 配置类
  */
 @Slf4j
-@Configuration
+// todo 服务启动时不依赖xxl-job
+// @Configuration
 public class XxlJobConfig {
 
     @Value("${xxl.job.admin.addresses}")

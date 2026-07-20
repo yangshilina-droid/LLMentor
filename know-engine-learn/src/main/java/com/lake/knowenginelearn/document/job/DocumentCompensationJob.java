@@ -2,9 +2,7 @@ package com.lake.knowenginelearn.document.job;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
-import com.lake.knowenginelearn.document.constant.SegmentStatus;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
-import com.lake.knowenginelearn.document.entity.KnowledgeSegment;
 import com.lake.knowenginelearn.document.service.DocumentProcessService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
@@ -67,6 +65,7 @@ public class DocumentCompensationJob {
             for (KnowledgeDocument document : documents) {
                 try {
                     // 检查重试次数（从 extension 字段解析，或使用默认值）
+                    // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
                     int retryCount = getRetryCount(document);
                     if (retryCount >= MAX_RETRY_COUNT) {
                         log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
@@ -77,7 +76,7 @@ public class DocumentCompensationJob {
 
                     // 执行分段
                     //todo 多余查询?
-                    int segmentCount = documentProcessService.splitDocument(document.getDocId());
+                    int segmentCount = documentProcessService.splitDocument(document);
 
                     // 更新重试次数
                     updateRetryCount(document.getDocId(), retryCount + 1);
@@ -117,31 +116,12 @@ public class DocumentCompensationJob {
 
             for (KnowledgeDocument document : documents) {
                 try {
-                    // 检查是否存在未向量化的片段
-                    LambdaQueryWrapper<KnowledgeSegment> segmentQueryWrapper = new LambdaQueryWrapper<>();
-                    segmentQueryWrapper.eq(KnowledgeSegment::getDocumentId, document.getDocId());
-                    segmentQueryWrapper.eq(KnowledgeSegment::getStatus, SegmentStatus.INIT);
-                    segmentQueryWrapper.eq(KnowledgeSegment::getSkipEmbedding, 0);
-                    segmentQueryWrapper.isNull(KnowledgeSegment::getEmbeddingId);
-
-                    //todo 这段逻辑可以内置到embeddingAndStore
-                    long unembeddedCount = knowledgeSegmentService.count(segmentQueryWrapper);
-                    if (unembeddedCount == 0) {
-                        // 没有未向量化的片段，检查是否所有片段都已处理
-                        // 如果所有片段都已向量化，更新文档状态
-                        checkAndUpdateDocumentStatus(document.getDocId());
-                        continue;
-                    }
-
                     // 检查重试次数
                     int retryCount = getRetryCount(document);
                     if (retryCount >= MAX_RETRY_COUNT) {
                         log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
                         continue;
                     }
-
-                    log.info("补偿处理向量化，documentId: {}, unembeddedCount: {}, retryCount: {}",
-                            document.getDocId(), unembeddedCount, retryCount);
 
                     // 执行向量化
                     boolean success = documentProcessService.embeddingAndStore(document.getDocId());
@@ -165,32 +145,6 @@ public class DocumentCompensationJob {
         }
 
         log.info("========== 向量化补偿任务完成，成功: {}，失败: {} ==========", successCount, failCount);
-    }
-
-    /**
-     * 检查并更新文档状态
-     * 如果所有片段都已向量化，更新文档状态为 VECTOR_STORED
-     */
-    private void checkAndUpdateDocumentStatus(Long documentId) {
-        // 检查是否还有未向量化的片段
-        LambdaQueryWrapper<KnowledgeSegment> unembeddedQuery = new LambdaQueryWrapper<>();
-        unembeddedQuery.eq(KnowledgeSegment::getDocumentId, documentId);
-        unembeddedQuery.eq(KnowledgeSegment::getSkipEmbedding, 0);
-        unembeddedQuery.and(wrapper -> wrapper
-                .eq(KnowledgeSegment::getStatus, SegmentStatus.INIT)
-                .or()
-                .isNull(KnowledgeSegment::getEmbeddingId));
-
-        long unembeddedCount = knowledgeSegmentService.count(unembeddedQuery);
-        if (unembeddedCount == 0) {
-            // 所有片段都已向量化，更新文档状态
-            KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-            if (document != null && document.getStatus() != DocumentStatus.VECTOR_STORED) {
-                document.setStatus(DocumentStatus.VECTOR_STORED);
-                knowledgeDocumentService.updateById(document);
-                log.info("文档状态更新为 VECTOR_STORED，documentId: {}", documentId);
-            }
-        }
     }
 
     /**

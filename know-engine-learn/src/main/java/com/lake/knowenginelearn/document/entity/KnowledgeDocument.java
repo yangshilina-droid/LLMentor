@@ -13,7 +13,7 @@ import java.time.LocalDate;
  */
 @Data
 @TableName("knowledge_document")
-public class KnowledgeDocument {
+public class KnowledgeDocument extends BaseEntity {
 
     /**
      * 文档ID

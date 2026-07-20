@@ -37,8 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 文档处理服务实现类
- * 负责文档的业务流程处理：上传、转换、分段、向量化
+ * 文档处理服务实现类 负责文档的业务流程处理：上传、转换、分段、向量化
  */
 @Slf4j
 @Service
@@ -94,6 +93,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
                 // 调用文件处理服务进行转换
                 fileProcessService.processDocument(document, file.getInputStream());
             } else {
+                // todo word、TXT、excel、markdown的特殊处理
                 // 非PDF文件，直接更新文档状态为已转换
                 document.setStatus(DocumentStatus.CONVERTED);
                 document.setConvertedDocUrl(fileUrl);
@@ -132,17 +132,16 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
     @Override
     @Transactional
-    public int splitDocument(Long documentId) {
+    public int splitDocument(KnowledgeDocument document) {
         //todo 加分布式锁
         // 1. 查询文档
-        KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
         Assert.notNull(document, "文档不存在");
         Assert.notNull(document.getConvertedDocUrl(), "文档未转换完成");
 
         if (document.getStatus() == DocumentStatus.CHUNKED) {
             // 返回已切分的分段数量
             Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
-                    .eq("document_id", documentId)
+                    .eq("document_id", document.getDocId())
                     .eq("skipEmbedding", 0));
             return chunkedCount.intValue();
         }
@@ -163,7 +162,6 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             throw new RuntimeException("下载文档失败: " + e.getMessage(), e);
         }
 
-        // todo 切分逻辑
         // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分
         MarkdownHeaderParentTextSplitter splitter = new MarkdownHeaderParentTextSplitter(1000, 100);
         Document doc = Document.from(content);
@@ -177,16 +175,17 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             knowledgeSegment.setText(segment.text());
             knowledgeSegment.setChunkId(segment.metadata().getString("chunkId"));
             knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
-            knowledgeSegment.setDocumentId(documentId);
+            knowledgeSegment.setDocumentId(document.getDocId());
             knowledgeSegment.setChunkOrder(i);
-            knowledgeSegment.setStatus(SegmentStatus.INIT);
 
             // 检查是否需要跳过嵌入
             Integer skipEmbedding = segment.metadata().getInteger("skipEmbedding");
             if (skipEmbedding != null && skipEmbedding == 1) {
                 knowledgeSegment.setSkipEmbedding(1);
+                knowledgeSegment.setStatus(SegmentStatus.STORED);
             } else {
                 knowledgeSegment.setSkipEmbedding(0);
+                knowledgeSegment.setStatus(SegmentStatus.STORED);
             }
 
             knowledgeSegments.add(knowledgeSegment);
@@ -209,6 +208,9 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         return segmentCount;
     }
 
+    /**
+     * 分段过长，切分为父子分段时 父分段不需要做 embedding
+     */
     @Override
     public boolean embeddingAndStore(Long docId) {
         // todo 增加分布式锁
@@ -221,28 +223,25 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             return true;
         }
 
-        // todo 状态的校验
+        if (knowledgeDocument.getStatus() != DocumentStatus.CHUNKED) {
+            return false;
+        }
 
-        // 分页扫描全部document_id为docId且status为INIT的文档片段
-        LambdaQueryWrapper<KnowledgeSegment> queryWrapper = Wrappers.<KnowledgeSegment>lambdaQuery()
-                .eq(KnowledgeSegment::getDocumentId, docId)
-                //todo 状态优化
-                .eq(KnowledgeSegment::getStatus, SegmentStatus.INIT)
-                .isNull(KnowledgeSegment::getEmbeddingId)
-                .eq(KnowledgeSegment::getSkipEmbedding, 0);
+        // 分页扫描全部document_id为docId且status为STORED的文档片段
+        LambdaQueryWrapper<KnowledgeSegment> queryWrapper = Wrappers.<KnowledgeSegment>lambdaQuery().eq(KnowledgeSegment::getDocumentId, docId).eq(KnowledgeSegment::getStatus, SegmentStatus.STORED).isNull(KnowledgeSegment::getEmbeddingId).eq(KnowledgeSegment::getSkipEmbedding, 0);
 
         Page<KnowledgeSegment> page = knowledgeSegmentService.page(new Page<>(1, 100), queryWrapper);
 
         while (page.getCurrent() == 1 || page.hasNext()) {
             List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
-            List<TextSegment> textSegments = textSegmentsToEmbed.stream()
-                    .map(segment -> TextSegment.from(segment.getText(), Metadata.from(segment.getMetadataMap())))
-                    .toList();
+            List<TextSegment> textSegments = textSegmentsToEmbed.stream().map(segment -> TextSegment.from(segment.getText(), Metadata.from(segment.getMetadataMap()))).toList();
             // 获取嵌入向量
             Response<List<Embedding>> embeddingResponse = openAiEmbeddingModel.embedAll(textSegments);
 
             // 存储嵌入向量
             List<String> embeddingIds = elasticsearchEmbeddingStore.addAll(embeddingResponse.content(), textSegments);
+
+            //todo 事务处理
 
             // 更新文档片段状态
             for (int i = 0; i < textSegmentsToEmbed.size(); i++) {
@@ -257,13 +256,16 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             page = knowledgeSegmentService.page(new Page<>(page.getCurrent() + 1, 100), queryWrapper);
         }
 
-        // todo 需要对所有的segment做检查，确保所有的segment都已转换为vector
+        //double check
+        long segmentCount = knowledgeSegmentService.count(queryWrapper);
+        if (segmentCount == 0) {
+            // 更新文档状态
+            knowledgeDocument.setStatus(DocumentStatus.VECTOR_STORED);
+            return knowledgeDocumentService.updateById(knowledgeDocument);
+        }
 
-        // 更新文档状态
-        knowledgeDocument.setStatus(DocumentStatus.VECTOR_STORED);
-        boolean result = knowledgeDocumentService.updateById(knowledgeDocument);
-
-        return result;
+        log.warn("向量存储失败，存在部分分段没有存储成功，未成功的数量： " + segmentCount);
+        return false;
     }
 
     // ==================== 事件发布方法 ====================
@@ -326,6 +328,5 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         return url.substring(lastSlashIndex + 1);
     }
 }
-
 
 
