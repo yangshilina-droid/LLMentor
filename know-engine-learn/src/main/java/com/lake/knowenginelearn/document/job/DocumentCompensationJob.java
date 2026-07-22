@@ -75,8 +75,7 @@ public class DocumentCompensationJob {
                     log.info("补偿处理文档分段，documentId: {}, retryCount: {}", document.getDocId(), retryCount);
 
                     // 执行分段
-                    //todo 多余查询?
-                    int segmentCount = documentProcessService.splitDocument(document);
+                    int segmentCount = documentProcessService.split(document);
 
                     // 更新重试次数
                     updateRetryCount(document.getDocId(), retryCount + 1);
@@ -124,7 +123,7 @@ public class DocumentCompensationJob {
                     }
 
                     // 执行向量化
-                    boolean success = documentProcessService.embeddingAndStore(document.getDocId());
+                    boolean success = documentProcessService.embedAndStore(document);
 
                     if (success) {
                         // 更新重试次数

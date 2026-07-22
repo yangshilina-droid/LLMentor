@@ -1,6 +1,7 @@
 package com.lake.knowenginelearn.rag.modules.splitter;
 
 
+import com.lake.knowenginelearn.infra.snowflake.SnowflakeIdGenerator;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
@@ -350,8 +351,9 @@ public class MarkdownHeaderBrotherTextSplitter implements DocumentSplitter {
                 result.add(segment);
             } else {
                 // 超出 chunkSize，需要二次切割
-                // 生成共同的 brotherChunkId，赋予同组所有分片
-                String brotherChunkId = UUID.randomUUID().toString();
+                // 生成共同的 brotherChunkId，赋予同组所有分片。UUID 只是随机数，可能会重复
+                // String brotherChunkId = UUID.randomUUID().toString();
+                String brotherChunkId = SnowflakeIdGenerator.getInstance().nextIdStr();
                 List<DocumentWithMetadata> subChunks = new ArrayList<>();
 
                 int start = 0;
@@ -361,7 +363,7 @@ public class MarkdownHeaderBrotherTextSplitter implements DocumentSplitter {
 
                     // 复制元数据并进行更新
                     Map<String, Object> subMetadata = new HashMap<>(segment.getMetadata());
-                    subMetadata.put(CHUNK_ID, UUID.randomUUID().toString());
+                    subMetadata.put(CHUNK_ID, SnowflakeIdGenerator.getInstance().nextIdStr());
                     subMetadata.put(BROTHER_CHUNK_ID, brotherChunkId);
 
                     subChunks.add(new DocumentWithMetadata(subContent, subMetadata));

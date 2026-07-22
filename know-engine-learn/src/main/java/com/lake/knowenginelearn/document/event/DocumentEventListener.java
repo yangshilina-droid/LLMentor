@@ -39,7 +39,7 @@ public class DocumentEventListener {
 
         try {
             KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-            int segmentCount = documentProcessService.splitDocument(document);
+            int segmentCount = documentProcessService.split(document);
             log.info("文档分段完成，documentId: {}, segmentCount: {}", documentId, segmentCount);
         } catch (Exception e) {
             log.error("文档分段失败，documentId: {}", documentId, e);
@@ -60,7 +60,8 @@ public class DocumentEventListener {
                 documentId, event.getSegmentCount());
 
         try {
-            boolean success = documentProcessService.embeddingAndStore(documentId);
+            KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
+            boolean success = documentProcessService.embedAndStore(document);
             log.info("向量嵌入完成，documentId: {}, success: {}", documentId, success);
         } catch (Exception e) {
             log.error("向量嵌入失败，documentId: {}", documentId, e);

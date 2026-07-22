@@ -49,7 +49,7 @@ public class KnowledgeDocumentController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("uploadUser") String uploadUser,
             @RequestParam(value = "accessibleBy", required = false) String accessibleBy) throws IOException {
-        return documentProcessService.uploadFile(file, uploadUser, accessibleBy);
+        return documentProcessService.upload(file, uploadUser, accessibleBy);
     }
 
     /**
@@ -62,7 +62,7 @@ public class KnowledgeDocumentController {
     @PostMapping("/split/{documentId}")
     public Integer splitDocument(@PathVariable Long documentId) {
         KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-        return documentProcessService.splitDocument(document);
+        return documentProcessService.split(document);
     }
 
     /**
@@ -74,7 +74,8 @@ public class KnowledgeDocumentController {
      */
     @PostMapping("/embedding")
     public String embedding(Long docId) {
-        return documentProcessService.embeddingAndStore(docId) ? "success" : "failed";
+        KnowledgeDocument document = knowledgeDocumentService.getById(docId);
+        return documentProcessService.embedAndStore(document) ? "success" : "failed";
     }
 
     /**

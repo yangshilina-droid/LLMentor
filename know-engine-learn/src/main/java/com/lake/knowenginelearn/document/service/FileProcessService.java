@@ -72,7 +72,6 @@ public class FileProcessService {
      *
      * @param document 文档对象
      */
-    //todo + distribute lock
     public void processDocument(KnowledgeDocument document, InputStream inputStream) {
         processDocumentToMarkdownFromZip(document, inputStream);
     }
