@@ -211,9 +211,19 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
                 .eq(KnowledgeSegment::getSkipEmbedding, 0);
 
         while (true) {
-            // 已完成的分段会退出 queryWrapper 的查询结果，因此每轮固定读取第一页，避免翻页时跳过数据。
+            /**
+             * 已完成的分段会退出 queryWrapper 的查询结果，因此每轮固定读取第一页，避免翻页时跳过数据。
+             *
+             * 说明：
+             * 每个片段处理成功后 会从status = STORED embedding_id = null 变为 status = VECTOR_STORED embedding_id != null
+             * 会退出原查询结果集，导致剩余数据向前移动。此时继续查询第二页，就会跳过一部分已经移动到第一页的数据
+             */
             Page<KnowledgeSegment> page = knowledgeSegmentService.page(new Page<>(1, 100), queryWrapper);
             List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
+            /**
+             * 原来的 page.hasNext() 表示当前页之后是否还有下一页。当查询到最后一页时，它会返回 false，导致最后一页在进入循环处理前就被跳过
+             * 新逻辑以“是否还有待处理记录”为终止条件，不会遗漏最后一批不足 100 条的数据
+             */
             if (textSegmentsToEmbed.isEmpty()) {
                 break;
             }
@@ -222,7 +232,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             // 获取嵌入向量
             Response<List<Embedding>> embeddingResponse = openAiEmbeddingModel.embedAll(textSegments);
 
-            // 存储嵌入向量
+            // 存储嵌入向量 es
             List<String> embeddingIds = elasticsearchEmbeddingStore.addAll(embeddingResponse.content(), textSegments);
             Assert.isTrue(embeddingIds.size() == textSegmentsToEmbed.size(),
                     "向量存储返回数量与文档分段数量不一致");
