@@ -1,8 +1,9 @@
 package com.lake.knowenginelearn.document.service;
 
 
+import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
+import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
@@ -14,22 +15,19 @@ public interface DocumentProcessService {
 
     /**
      * 上传文件
-     *
-     * @param file         上传的文件
-     * @param uploadUser   上传用户
-     * @param accessibleBy 可见范围（可选）
      * @return 保存后的文档记录
      * @throws IOException IO异常
      */
-    KnowledgeDocument upload(MultipartFile file, String uploadUser, String accessibleBy) throws IOException;
+    public KnowledgeDocument upload(DocumentUploadParam documentUploadParam) throws IOException;
 
     /**
      * 对文档进行切分
      * 使用 MarkdownHeaderParentTextSplitter 进行切分
      *
+     * @param document 文档ID
      * @return 切分后的片段数量
      */
-    int split(KnowledgeDocument document);
+    public int split(KnowledgeDocument document, DocumentSplitParam documentSplitParam);
 
     /**
      * 向量化并存储

@@ -6,7 +6,10 @@ import org.springframework.context.ApplicationEvent;
 /**
  * 文档已转换事件
  * 当文档状态变更为CONVERTED时发送此事件
+ *
+ * @Deprecated 不再使用事件驱动，靠用户在前端手动触发分段，因为需要用户选择分段方式。
  */
+@Deprecated
 public class DocumentConvertedEvent extends ApplicationEvent {
 
     /**

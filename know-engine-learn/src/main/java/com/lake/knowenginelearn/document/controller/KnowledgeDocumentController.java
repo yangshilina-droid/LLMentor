@@ -2,10 +2,12 @@ package com.lake.knowenginelearn.document.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
+import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
 import com.lake.knowenginelearn.document.service.DocumentProcessService;
-import com.lake.knowenginelearn.document.service.FileProcessService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
+import com.lake.knowenginelearn.document.service.impl.PdfProcessServiceImpl;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
@@ -34,7 +36,7 @@ public class KnowledgeDocumentController {
     private DocumentProcessService documentProcessService;
 
     @Autowired
-    private FileProcessService fileProcessService;
+    private PdfProcessServiceImpl fileProcessService;
 
     /**
      * 文件上传接口
@@ -48,8 +50,12 @@ public class KnowledgeDocumentController {
     public KnowledgeDocument uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("uploadUser") String uploadUser,
+            @RequestParam("title") String title,
+            @RequestParam(value = "tableName", required = false) String tableName,
+            @RequestParam("description") String description,
+            @RequestParam("knowledgeBaseType") String knowledgeBaseType,
             @RequestParam(value = "accessibleBy", required = false) String accessibleBy) throws IOException {
-        return documentProcessService.upload(file, uploadUser, accessibleBy);
+        return documentProcessService.upload(new DocumentUploadParam(file, uploadUser, title, accessibleBy, description, knowledgeBaseType, tableName));
     }
 
     /**
@@ -60,9 +66,16 @@ public class KnowledgeDocumentController {
      * @return 切分后的片段数量
      */
     @PostMapping("/split/{documentId}")
-    public Integer splitDocument(@PathVariable Long documentId) {
+    public Integer splitDocument(@PathVariable Long documentId,
+            @RequestParam("splitType") String splitType,
+            @RequestParam("chunkSize") Integer chunkSize,
+            @RequestParam(value = "overlap", required = false) Integer overlap,
+            @RequestParam(value = "regex", required = false) String regex,
+            @RequestParam(value = "titleLevel", required = false) Integer titleLevel,
+            @RequestParam(value = "separator", required = false) String separator
+    ) {
         KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-        return documentProcessService.split(document);
+        return documentProcessService.split(document, new DocumentSplitParam(splitType, chunkSize, overlap, titleLevel, separator, regex));
     }
 
     /**

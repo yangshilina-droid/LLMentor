@@ -1,15 +1,20 @@
 package com.lake.knowenginelearn.document.entity;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
+import com.lake.knowenginelearn.document.constant.KnowledgeBaseType;
 import lombok.Data;
 
-import java.time.LocalDate;
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * 知识文档表
+ * 知识文档表实体类
  */
 @Data
 @TableName("knowledge_document")
@@ -18,7 +23,7 @@ public class KnowledgeDocument extends BaseEntity {
     /**
      * 文档ID
      */
-    @TableId(value = "doc_id", type = IdType.AUTO)
+    @TableId(type = IdType.AUTO)
     private Long docId;
 
     /**
@@ -42,11 +47,6 @@ public class KnowledgeDocument extends BaseEntity {
     private String convertedDocUrl;
 
     /**
-     * 文档失效日期
-     */
-    private LocalDate expireDate;
-
-    /**
      * 状态：INIT, UPLOADED, CONVERTING, CONVERTED, CHUNKED, VECTOR_STORED
      */
     private DocumentStatus status;
@@ -57,7 +57,45 @@ public class KnowledgeDocument extends BaseEntity {
     private String accessibleBy;
 
     /**
+     * 文档描述
+     */
+    private String description;
+
+    /**
+     * 知识库类型
+     */
+    private KnowledgeBaseType knowledgeBaseType;
+
+    /**
      * 扩展字段，保存JSON字符串
      */
     private String extension;
+
+    @JsonIgnore
+    public Boolean isOverride() {
+        if (extension != null && !extension.isEmpty()) {
+            return (Boolean) JSON.parseObject(extension, Map.class).get("isOverride");
+        }
+        return false;
+    }
+
+    @JsonIgnore
+    public String getTableName() {
+        if (extension != null && !extension.isEmpty()) {
+            return (String) JSON.parseObject(extension, Map.class).get("tableName");
+        }
+        return null;
+    }
+
+    @JsonIgnore
+    public void setTableName(String tableName) {
+        Map<String, Serializable> extensionMap;
+        if (extension == null) {
+            extensionMap = new HashMap<String, Serializable>();
+        } else {
+            extensionMap = JSON.parseObject(extension, Map.class);
+        }
+        extensionMap.put("tableName", tableName);
+        this.extension = JSON.toJSONString(extensionMap);
+    }
 }

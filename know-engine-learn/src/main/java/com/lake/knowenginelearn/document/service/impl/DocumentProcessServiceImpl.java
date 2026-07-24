@@ -5,16 +5,24 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.google.common.base.Stopwatch;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
+import com.lake.knowenginelearn.document.constant.FileType;
+import com.lake.knowenginelearn.document.constant.KnowledgeBaseType;
 import com.lake.knowenginelearn.document.constant.SegmentStatus;
+import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
+import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
 import com.lake.knowenginelearn.document.entity.KnowledgeSegment;
 import com.lake.knowenginelearn.document.event.DocumentChunkedEvent;
 import com.lake.knowenginelearn.document.event.DocumentConvertedEvent;
 import com.lake.knowenginelearn.document.service.*;
+import com.lake.knowenginelearn.document.util.FileTypeUtil;
 import com.lake.knowenginelearn.infra.lock.DistributeLock;
-import com.lake.knowenginelearn.rag.modules.splitter.MarkdownHeaderParentTextSplitter;
+import com.lake.knowenginelearn.rag.modules.splitter.DocumentSplitterFactory;
+import com.lake.knowenginelearn.rag.modules.splitter.ExcelSplitter;
 import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -51,7 +59,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     private FileStorageService fileStorageService;
 
     @Autowired
-    private FileProcessService fileProcessService;
+    private FileProcessServiceFactory fileProcessServiceFactory;
 
     @Autowired
     private KnowledgeSegmentService knowledgeSegmentService;
@@ -68,42 +76,46 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     @Value("${minio.bucketName}")
     private String bucketName;
 
-    private final Tika tika = new Tika();
-
     @Override
     @DistributeLock(scene = "document-upload", keyExpression = "#uploadUser", waitTime = 0)
-    public KnowledgeDocument upload(MultipartFile file, String uploadUser, String accessibleBy) throws IOException {
+    public KnowledgeDocument upload(DocumentUploadParam documentUploadParam) throws IOException {
         try {
             log.info("start to upload ....");
-            String fileName = file.getOriginalFilename();
+            String fileName = documentUploadParam.file().getOriginalFilename();
             // 用minio上传
-            String fileUrl = fileStorageService.uploadFile(file, fileName);
+            String fileUrl = fileStorageService.uploadFile(documentUploadParam.file(), fileName);
 
             // 构建文档记录
             KnowledgeDocument document = new KnowledgeDocument();
-            document.setDocTitle(fileName);
-            document.setUploadUser(uploadUser);
+            document.setDocTitle(documentUploadParam.title());
+            document.setUploadUser(documentUploadParam.uploadUser());
             document.setDocUrl(fileUrl);
             document.setStatus(DocumentStatus.UPLOADED);
-            document.setAccessibleBy(accessibleBy);
+            document.setAccessibleBy(documentUploadParam.accessibleBy());
+            document.setDescription(documentUploadParam.description());
+            document.setKnowledgeBaseType(KnowledgeBaseType.valueOf(documentUploadParam.knowledgeBaseType()));
+            document.setTableName(documentUploadParam.tableName());
 
             // 保存到数据库
             boolean result = knowledgeDocumentService.save(document);
             Assert.isTrue(result, "文件上传失败");
 
-            // 如果是 PDF 文件（通过后缀或文件头判断），调用转换处理
-            if (isPdfFile(fileName) || isPdfContent(file)) {
-                // 调用文件处理服务进行转换
-                fileProcessService.processDocument(document, file.getInputStream());
-            } else {
-                // 非PDF文件，直接更新文档状态为已转换
+            FileProcessService fileProcessService = fileProcessServiceFactory.get(FileTypeUtil.getFileType(fileName, documentUploadParam.file()), document.getKnowledgeBaseType());
+            if (fileProcessService != null) {
+                fileProcessService.processDocument(document, documentUploadParam.file().getInputStream());
+            }
+
+            if (document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH) {
                 document.setStatus(DocumentStatus.CONVERTED);
                 document.setConvertedDocUrl(fileUrl);
                 result = knowledgeDocumentService.updateById(document);
                 Assert.isTrue(result, "文件状态更新失败");
+            } else {
+                document.setStatus(DocumentStatus.STORED);
+                document.setConvertedDocUrl(fileUrl);
+                result = knowledgeDocumentService.updateById(document);
+                Assert.isTrue(result, "文件状态更新失败");
             }
-
-            publishConvertedEvent(document);
             return document;
         } catch (Exception e) {
             throw new IOException("文件上传失败: " + e.getMessage(), e);
@@ -113,16 +125,14 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     @Override
     @Transactional
     @DistributeLock(scene = "document-split", keyExpression = "#document.docId", waitTime = 0)
-    public int split(KnowledgeDocument document) {
+    public int split(KnowledgeDocument document, DocumentSplitParam documentSplitParam) {
         // 1. 查询文档
         Assert.notNull(document, "文档不存在");
         Assert.notNull(document.getConvertedDocUrl(), "文档未转换完成");
 
         if (document.getStatus() == DocumentStatus.CHUNKED) {
             // 返回已切分的分段数量
-            Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
-                    .eq("document_id", document.getDocId())
-                    .eq("skipEmbedding", 0));
+            Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>().eq("document_id", document.getDocId()).eq("skipEmbedding", 0));
             return chunkedCount.intValue();
         }
 
@@ -135,25 +145,29 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         String objectName = extractObjectNameFromUrl(convertedDocUrl);
         Assert.notNull(objectName, "无法解析文档URL");
 
-        String content;
+        List<KnowledgeSegment> knowledgeSegments = new ArrayList<>();
+        List<TextSegment> segments = new ArrayList<>();
         try (InputStream inputStream = fileStorageService.downloadFile(objectName)) {
-            content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+            //EXCEL单独处理，因为他不是Document类型
+            if (FileType.EXCEL == FileTypeUtil.getFileType(document.getConvertedDocUrl()) || FileType.CSV == FileTypeUtil.getFileType(document.getConvertedDocUrl())) {
+                ExcelSplitter splitter = new ExcelSplitter(documentSplitParam.chunkSize(), false);
+                segments = splitter.split(inputStream.readAllBytes());
+            } else {
+                DocumentSplitter splitter = DocumentSplitterFactory.getInstance(documentSplitParam);
+                Document doc = Document.from(new String(inputStream.readAllBytes(), StandardCharsets.UTF_8));
+                segments = splitter.split(doc);
+            }
         } catch (Exception e) {
             throw new RuntimeException("下载文档失败: " + e.getMessage(), e);
         }
 
-        // 3. 使用 MarkdownHeaderParentTextSplitter 进行切分
-        MarkdownHeaderParentTextSplitter splitter = new MarkdownHeaderParentTextSplitter(1000, 100);
-        Document doc = Document.from(content);
-        List<TextSegment> segments = splitter.split(doc);
-
         // 4. 转换为 KnowledgeSegment 并保存
-        List<KnowledgeSegment> knowledgeSegments = new ArrayList<>();
         for (int i = 0; i < segments.size(); i++) {
             TextSegment segment = segments.get(i);
             KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
             knowledgeSegment.setText(segment.text());
             knowledgeSegment.setChunkId(segment.metadata().getString("chunkId"));
+            //todo metadata统一处理
             knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
             knowledgeSegment.setDocumentId(document.getDocId());
             knowledgeSegment.setChunkOrder(i);
@@ -172,8 +186,10 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         }
 
         // 5. 批量保存片段
+        Stopwatch stopwatch = Stopwatch.createStarted();
         boolean saveResult = knowledgeSegmentService.saveBatch(knowledgeSegments);
         Assert.isTrue(saveResult, "保存知识片段失败");
+        log.info("保存知识片段耗时: {}", stopwatch.elapsed().toMillis());
 
         int segmentCount = knowledgeSegments.size();
 
@@ -189,7 +205,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     }
 
     @Override
-    @DistributeLock(scene = "document-embed", keyExpression = "#document.docId", waitTime = 0)
+    @DistributeLock(scene = "document-split", keyExpression = "#document.docId", waitTime = 0)
     public boolean embedAndStore(KnowledgeDocument document) {
         if (document == null) {
             return false;
@@ -210,32 +226,16 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
                 .isNull(KnowledgeSegment::getEmbeddingId)
                 .eq(KnowledgeSegment::getSkipEmbedding, 0);
 
-        while (true) {
-            /**
-             * 已完成的分段会退出 queryWrapper 的查询结果，因此每轮固定读取第一页，避免翻页时跳过数据。
-             *
-             * 说明：
-             * 每个片段处理成功后 会从status = STORED embedding_id = null 变为 status = VECTOR_STORED embedding_id != null
-             * 会退出原查询结果集，导致剩余数据向前移动。此时继续查询第二页，就会跳过一部分已经移动到第一页的数据
-             */
-            Page<KnowledgeSegment> page = knowledgeSegmentService.page(new Page<>(1, 100), queryWrapper);
-            List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
-            /**
-             * 原来的 page.hasNext() 表示当前页之后是否还有下一页。当查询到最后一页时，它会返回 false，导致最后一页在进入循环处理前就被跳过
-             * 新逻辑以“是否还有待处理记录”为终止条件，不会遗漏最后一批不足 100 条的数据
-             */
-            if (textSegmentsToEmbed.isEmpty()) {
-                break;
-            }
+        Page<KnowledgeSegment> page = knowledgeSegmentService.page(new Page<>(1, 100), queryWrapper);
 
+        while (page.getCurrent() == 1 || page.hasNext()) {
+            List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
             List<TextSegment> textSegments = textSegmentsToEmbed.stream().map(segment -> TextSegment.from(segment.getText(), Metadata.from(segment.getMetadataMap()))).toList();
             // 获取嵌入向量
             Response<List<Embedding>> embeddingResponse = openAiEmbeddingModel.embedAll(textSegments);
 
-            // 存储嵌入向量 es
+            // 存储嵌入向量
             List<String> embeddingIds = elasticsearchEmbeddingStore.addAll(embeddingResponse.content(), textSegments);
-            Assert.isTrue(embeddingIds.size() == textSegmentsToEmbed.size(),
-                    "向量存储返回数量与文档分段数量不一致");
 
             //todo 事务处理
 
@@ -245,9 +245,11 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
                 KnowledgeSegment knowledgeSegment = textSegmentsToEmbed.get(i);
                 knowledgeSegment.setEmbeddingId(embeddingId);
                 knowledgeSegment.setStatus(SegmentStatus.VECTOR_STORED);
-                boolean updateResult = knowledgeSegmentService.updateById(knowledgeSegment);
-                Assert.isTrue(updateResult, "更新知识片段向量状态失败，segmentId: " + knowledgeSegment.getId());
+                knowledgeSegmentService.updateById(knowledgeSegment);
             }
+
+            // 继续扫描下一页
+            page = knowledgeSegmentService.page(new Page<>(page.getCurrent() + 1, 100), queryWrapper);
         }
 
         //double check
@@ -266,7 +268,9 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
     /**
      * 发送文档已转换事件
+     * @Deprecated 不再使用事件驱动，靠用户在前端手动触发分段，因为需要用户选择分段方式。
      */
+    @Deprecated
     private void publishConvertedEvent(KnowledgeDocument document) {
         log.info("发送文档CONVERTED事件，documentId: {}", document.getDocId());
         DocumentConvertedEvent event = new DocumentConvertedEvent(this, document.getDocId(), document);
@@ -299,7 +303,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
      */
     private boolean isPdfContent(MultipartFile file) {
         try (InputStream is = file.getInputStream()) {
-            String mimeType = tika.detect(is);
+            String mimeType = new Tika().detect(is);
             return "application/pdf".equals(mimeType);
         } catch (IOException e) {
             log.error("文件类型检测失败: {}", e.getMessage());

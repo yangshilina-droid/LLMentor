@@ -45,54 +45,54 @@ public class DocumentCompensationJob {
      * 文档分段补偿任务
      * 扫描 CONVERTED 状态超过阈值的文档，重新触发分段
      */
-    @XxlJob("documentSplitCompensation")
-    public void documentSplitCompensation() {
-        log.info("========== 开始执行文档分段补偿任务 ==========");
-        int successCount = 0;
-        int failCount = 0;
-
-        try {
-            // 查询 CONVERTED 状态的文档
-            // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
-            // 这里简化处理，查询所有 CONVERTED 状态的文档
-            LambdaQueryWrapper<KnowledgeDocument> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(KnowledgeDocument::getStatus, DocumentStatus.CONVERTED);
-            queryWrapper.isNotNull(KnowledgeDocument::getConvertedDocUrl);
-
-            List<KnowledgeDocument> documents = knowledgeDocumentService.list(queryWrapper);
-            log.info("发现 {} 个待补偿的 CONVERTED 状态文档", documents.size());
-
-            for (KnowledgeDocument document : documents) {
-                try {
-                    // 检查重试次数（从 extension 字段解析，或使用默认值）
-                    // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
-                    int retryCount = getRetryCount(document);
-                    if (retryCount >= MAX_RETRY_COUNT) {
-                        log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
-                        continue;
-                    }
-
-                    log.info("补偿处理文档分段，documentId: {}, retryCount: {}", document.getDocId(), retryCount);
-
-                    // 执行分段
-                    int segmentCount = documentProcessService.split(document);
-
-                    // 更新重试次数
-                    updateRetryCount(document.getDocId(), retryCount + 1);
-
-                    log.info("文档分段补偿成功，documentId: {}, segmentCount: {}", document.getDocId(), segmentCount);
-                    successCount++;
-                } catch (Exception e) {
-                    log.error("文档分段补偿失败，documentId: {}", document.getDocId(), e);
-                    failCount++;
-                }
-            }
-        } catch (Exception e) {
-            log.error("文档分段补偿任务执行异常", e);
-        }
-
-        log.info("========== 文档分段补偿任务完成，成功: {}，失败: {} ==========", successCount, failCount);
-    }
+    // @XxlJob("documentSplitCompensation")
+    // public void documentSplitCompensation() {
+    //     log.info("========== 开始执行文档分段补偿任务 ==========");
+    //     int successCount = 0;
+    //     int failCount = 0;
+    //
+    //     try {
+    //         // 查询 CONVERTED 状态的文档
+    //         // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
+    //         // 这里简化处理，查询所有 CONVERTED 状态的文档
+    //         LambdaQueryWrapper<KnowledgeDocument> queryWrapper = new LambdaQueryWrapper<>();
+    //         queryWrapper.eq(KnowledgeDocument::getStatus, DocumentStatus.CONVERTED);
+    //         queryWrapper.isNotNull(KnowledgeDocument::getConvertedDocUrl);
+    //
+    //         List<KnowledgeDocument> documents = knowledgeDocumentService.list(queryWrapper);
+    //         log.info("发现 {} 个待补偿的 CONVERTED 状态文档", documents.size());
+    //
+    //         for (KnowledgeDocument document : documents) {
+    //             try {
+    //                 // 检查重试次数（从 extension 字段解析，或使用默认值）
+    //                 // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
+    //                 int retryCount = getRetryCount(document);
+    //                 if (retryCount >= MAX_RETRY_COUNT) {
+    //                     log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
+    //                     continue;
+    //                 }
+    //
+    //                 log.info("补偿处理文档分段，documentId: {}, retryCount: {}", document.getDocId(), retryCount);
+    //
+    //                 // 执行分段
+    //                 int segmentCount = documentProcessService.split(document);
+    //
+    //                 // 更新重试次数
+    //                 updateRetryCount(document.getDocId(), retryCount + 1);
+    //
+    //                 log.info("文档分段补偿成功，documentId: {}, segmentCount: {}", document.getDocId(), segmentCount);
+    //                 successCount++;
+    //             } catch (Exception e) {
+    //                 log.error("文档分段补偿失败，documentId: {}", document.getDocId(), e);
+    //                 failCount++;
+    //             }
+    //         }
+    //     } catch (Exception e) {
+    //         log.error("文档分段补偿任务执行异常", e);
+    //     }
+    //
+    //     log.info("========== 文档分段补偿任务完成，成功: {}，失败: {} ==========", successCount, failCount);
+    // }
 
     /**
      * 向量化补偿任务
