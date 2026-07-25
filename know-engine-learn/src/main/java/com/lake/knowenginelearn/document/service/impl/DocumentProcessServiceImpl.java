@@ -111,6 +111,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
                 result = knowledgeDocumentService.updateById(document);
                 Assert.isTrue(result, "文件状态更新失败");
             } else {
+                // excel不用转换，直接将每行数据存储到数据库
                 document.setStatus(DocumentStatus.STORED);
                 document.setConvertedDocUrl(fileUrl);
                 result = knowledgeDocumentService.updateById(document);
@@ -136,8 +137,11 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             return chunkedCount.intValue();
         }
 
-        if (document.getStatus() != DocumentStatus.CONVERTED) {
-            throw new RuntimeException("文档状态不为CONVERTED，无法完成切分");
+        if (document.getStatus() != DocumentStatus.CONVERTED
+                && document.getStatus() != DocumentStatus.STORED) {
+            throw new IllegalStateException(
+                    "文档状态必须为CONVERTED或STORED，当前状态: " + document.getStatus() + "，无法完成切分"
+            );
         }
 
         // 2. 从MinIO下载文件内容
@@ -205,7 +209,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     }
 
     @Override
-    @DistributeLock(scene = "document-split", keyExpression = "#document.docId", waitTime = 0)
+    @DistributeLock(scene = "document-embed", keyExpression = "#document.docId", waitTime = 0)
     public boolean embedAndStore(KnowledgeDocument document) {
         if (document == null) {
             return false;

@@ -31,9 +31,7 @@ public enum DocumentStatus {
      */
     VECTOR_STORED,
     /**
-     * excel 存储到数据库
-     *
-     * 存储完成（不需要向量存储的使用这个状态）
+     * excel 数据逐行存储到数据库，不需要CONVERTED
      */
     STORED;
 }
