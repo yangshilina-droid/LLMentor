@@ -1,0 +1,130 @@
+package com.lake.knowenginelearn.chat.controller;
+
+import com.lake.knowenginelearn.ai.service.TitleSummaryService;
+import com.lake.knowenginelearn.chat.entity.ChatConversation;
+import com.lake.knowenginelearn.chat.entity.ChatMessage;
+import com.lake.knowenginelearn.chat.service.ChatConversationService;
+import com.lake.knowenginelearn.chat.service.ChatMessageService;
+import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.service.AiServices;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Flux;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 流式对话接口
+ */
+@RestController
+@RequestMapping("/chat")
+@Slf4j
+public class ChatController {
+
+    @Autowired
+    private ChatConversationService chatConversationService;
+
+    @Autowired
+    private ChatMessageService chatMessageService;
+
+    @Value("${langchain4j.open-ai.chat-model.api-key}")
+    private String chatModelApiKey;
+
+    @Value("${langchain4j.open-ai.chat-model.base-url}")
+    private String chatModelBaseUrl;
+
+    /**
+     * 流式对话接口
+     * <p>
+     * 入参：userId、content（用户问题）、conversationId（可选）
+     * 返回：SSE 流，每个 token 逐字推送；流结束前推送一条 [DONE] 事件携带 conversationId
+     *
+     * @param userId         用户ID
+     * @param content        用户问题
+     * @param conversationId 会话ID（可选，不传则自动创建新会话）
+     */
+    @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> send(
+            @RequestParam String userId,
+            @RequestParam String content,
+            @RequestParam(required = false) String conversationId) {
+
+        // 1. 处理会话：没有 conversationId 则创建新会话
+        final String finalConversationId;
+        if (conversationId == null || conversationId.isBlank()) {
+
+            // 同步：先用 content 前 20 个字符作为临时标题，快速建会话
+            String tempTitle = content.substring(0, Math.min(content.length(), 20));
+            finalConversationId = chatConversationService.createConversation(userId, tempTitle);
+            log.info("创建新会话: conversationId={}, tempTitle={}", finalConversationId, tempTitle);
+
+            // 异步：用虚拟线程调用 LLM 生成摘要标题，完成后回写到数据库
+            Thread.ofVirtual().name("title-summary-" + finalConversationId).start(() -> {
+                try {
+                    OpenAiChatModel titleChatModel = OpenAiChatModel.builder()
+                            .apiKey(chatModelApiKey)
+                            .modelName("qwen3.7-flash")
+                            .temperature(0.7)
+                            .baseUrl(chatModelBaseUrl)
+                            .customParameters(Map.of("enable_thinking", false))
+                            .build();
+                    TitleSummaryService titleSummaryService = AiServices.builder(TitleSummaryService.class)
+                            .chatModel(titleChatModel)
+                            .build();
+                    String aiTitle = titleSummaryService.generateTitle(content);
+                    chatConversationService.updateTitle(finalConversationId, aiTitle);
+                    log.info("异步标题更新完成: conversationId={}, title={}", finalConversationId, aiTitle);
+                } catch (Exception e) {
+                    log.warn("异步标题生成失败, 保留临时标题: conversationId={}", finalConversationId, e);
+                }
+            });
+        } else {
+            finalConversationId = conversationId;
+        }
+
+        // 2. 保存用户消息
+        String messageId = chatMessageService.saveUserMessage(finalConversationId, content);
+
+        // 3. 调用LLM流式对话
+        // TODO: 调用LLM流式对话，生成AI回复内容
+
+        // 4. 返回会话ID给前端
+        return Flux.just("[DONE]:" + finalConversationId);
+    }
+
+    /**
+     * 查询指定用户的对话列表，按更新时间倒序排序
+     *
+     * @param userId 用户ID
+     */
+    @GetMapping("/list")
+    public List<ChatConversation> listConversations(@RequestParam String userId) {
+        return chatConversationService.getConversationsByUserId(userId);
+    }
+
+    /**
+     * 查询指定对话的消息列表，按创建时间正序排序
+     *
+     * @param conversationId 会话ID
+     */
+    @GetMapping("/messages")
+    public List<ChatMessage> listMessages(@RequestParam String conversationId) {
+        return chatMessageService.getMessagesByConversationId(conversationId);
+    }
+
+    /**
+     * 删除对话（同时删除该对话下所有消息）
+     *
+     * @param conversationId 会话ID
+     */
+    @DeleteMapping("/{conversationId}")
+    public boolean deleteConversation(@PathVariable String conversationId) {
+        chatMessageService.deleteMessagesByConversationId(conversationId);
+        return chatConversationService.deleteConversation(conversationId);
+    }
+}
+
