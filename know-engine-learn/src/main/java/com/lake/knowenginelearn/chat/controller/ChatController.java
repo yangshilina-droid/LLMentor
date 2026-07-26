@@ -1,10 +1,14 @@
 package com.lake.knowenginelearn.chat.controller;
 
+import com.lake.knowenginelearn.ai.model.IntentRecognitionResult;
+import com.lake.knowenginelearn.ai.service.CommonChatService;
+import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
 import com.lake.knowenginelearn.ai.service.TitleSummaryService;
 import com.lake.knowenginelearn.chat.entity.ChatConversation;
 import com.lake.knowenginelearn.chat.entity.ChatMessage;
 import com.lake.knowenginelearn.chat.service.ChatConversationService;
 import com.lake.knowenginelearn.chat.service.ChatMessageService;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.extern.slf4j.Slf4j;
@@ -31,11 +35,17 @@ public class ChatController {
     @Autowired
     private ChatMessageService chatMessageService;
 
+    @Autowired
+    private CommonChatService commonChatService;
+
     @Value("${langchain4j.open-ai.chat-model.api-key}")
     private String chatModelApiKey;
 
     @Value("${langchain4j.open-ai.chat-model.base-url}")
     private String chatModelBaseUrl;
+
+    @Autowired
+    private ChatModel chatModel;
 
     /**
      * 流式对话接口
@@ -90,6 +100,15 @@ public class ChatController {
         String messageId = chatMessageService.saveUserMessage(finalConversationId, content);
 
         // 3. 调用LLM流式对话
+        IntentRecognitionService intentRecognitionService =
+                AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build();
+        IntentRecognitionResult intentRecognitionResult = intentRecognitionService.chat(content);
+
+        // 4. 如果用户问题不相关，使用一个通用的LLM做对话
+        if (!intentRecognitionResult.related()) {
+            return commonChatService.streamChat(userId, content).concatWith(Flux.just("[DONE]:" + finalConversationId));
+        }
+
         // TODO: 调用LLM流式对话，生成AI回复内容
 
         // 4. 返回会话ID给前端
