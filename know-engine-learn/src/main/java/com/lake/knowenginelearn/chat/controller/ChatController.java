@@ -100,13 +100,16 @@ public class ChatController {
         String messageId = chatMessageService.saveUserMessage(finalConversationId, content);
 
         // 3. 调用LLM流式对话
-        IntentRecognitionService intentRecognitionService =
-                AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build();
+        IntentRecognitionService intentRecognitionService = AiServices.builder(IntentRecognitionService.class)
+                .chatModel(chatModel)
+                .build();
         IntentRecognitionResult intentRecognitionResult = intentRecognitionService.chat(content);
 
         // 4. 如果用户问题不相关，使用一个通用的LLM做对话
         if (!intentRecognitionResult.related()) {
-            return commonChatService.streamChat(userId, content).concatWith(Flux.just("[DONE]:" + finalConversationId));
+            return commonChatService
+                    .streamChat(userId, content)
+                    .concatWith(Flux.just("[DONE]:" + finalConversationId));
         }
 
         // TODO: 调用LLM流式对话，生成AI回复内容
