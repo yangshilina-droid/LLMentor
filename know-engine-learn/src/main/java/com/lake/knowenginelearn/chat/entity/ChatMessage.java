@@ -1,6 +1,8 @@
 package com.lake.knowenginelearn.chat.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.lake.knowenginelearn.chat.constant.ChatMessageType;
@@ -20,6 +22,12 @@ import java.util.Map;
 @Data
 @TableName(value = "chat_message", autoResultMap = true)
 public class ChatMessage extends BaseEntity {
+
+    /**
+     * 主键ID
+     */
+    @TableId(value = "id", type = IdType.AUTO)
+    private Long id;
 
     /**
      * 消息唯一标识
