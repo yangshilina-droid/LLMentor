@@ -1,13 +1,22 @@
 package com.lake.knowenginelearn;
 
+import com.lake.knowenginelearn.rag.modules.KnowEngineQueryTransformer;
+import org.springframework.beans.BeansException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 
 @SpringBootApplication
-public class KnowEngineLearnApplication {
+public class KnowEngineLearnApplication implements ApplicationContextAware {
 
     public static void main(String[] args) {
         SpringApplication.run(KnowEngineLearnApplication.class, args);
+    }
+
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+        KnowEngineQueryTransformer.setApplicationContext(applicationContext);
     }
 
 }

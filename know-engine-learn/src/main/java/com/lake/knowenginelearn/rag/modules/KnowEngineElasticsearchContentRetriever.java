@@ -126,6 +126,7 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
                 .build();
 
         // 混合检索模式：结合向量检索和全文检索
+        // todo 只有企业版才支持
         if (configuration instanceof ElasticsearchConfigurationHybrid) {
             return mapResultsToContentList(this.hybridSearch(request, query.text()));
         }
@@ -145,7 +146,7 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
 
         for (; iterator.hasNext(); ) {
             Content content = iterator.next();
-            // 兄弟分段扩展：检索具有相同 brotherChunkId 的其他兄弟分段
+            // 1 兄弟分段扩展：检索具有相同 brotherChunkId 的其他兄弟分段
             String brotherChunkId = content.textSegment().metadata().getString(BROTHER_CHUNK_ID);
             if (brotherChunkId != null) {
                 List<Content> cachedBrotherDocs = brotherDocMap.get(brotherChunkId);
@@ -164,7 +165,7 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
                 }
             }
 
-            // 父分段替换：用父分段的完整文本替换子分段，获取更完整的语义
+            // 2 父分段替换：用父分段的完整文本替换子分段，获取更完整的语义
             String parentChunkId = content.textSegment().metadata().getString(PARENT_CHUNK_ID);
             if (parentChunkId != null) {
                 List<Content> cachedParentDocs = parentDocMap.get(parentChunkId);

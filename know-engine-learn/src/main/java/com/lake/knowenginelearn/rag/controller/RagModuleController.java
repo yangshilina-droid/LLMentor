@@ -7,12 +7,20 @@ import com.lake.knowenginelearn.chat.service.ChatMessageService;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
 import com.lake.knowenginelearn.rag.modules.KnowEngineElasticsearchContentRetriever;
 import com.lake.knowenginelearn.rag.modules.KnowEngineQueryRouter;
+import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.input.PromptTemplate;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
+import dev.langchain4j.model.scoring.onnx.OnnxScoringModel;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.ContentMetadata;
+import dev.langchain4j.rag.content.aggregator.ContentAggregator;
+import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.elasticsearch.ElasticsearchContentRetriever;
 import dev.langchain4j.rag.query.Query;
@@ -31,6 +39,8 @@ import javax.sql.DataSource;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static com.lake.knowenginelearn.rag.config.ElasticSearchConfiguration.INDEX_NAME;
 
@@ -92,6 +102,8 @@ public class RagModuleController {
                 .build();
 
         this.sqlRetriever = SqlDatabaseContentRetriever.builder().dataSource(dataSource)
+                .promptTemplate(new PromptTemplate("textToSqlPrompt.getContentAsString(UTF_8)"))
+                .databaseStructure("tablesSql.getContentAsString(UTF_8)")
                 .chatModel(chatModel)
                 .build();
 
@@ -120,6 +132,45 @@ public class RagModuleController {
                 List.of(embeddingRetriever, fullTextRetriever, sqlRetriever, neo4jRetriever), chatModel);
         Collection<ContentRetriever> contentRetrievers = knowEngineQueryRouter.route(new Query(query));
         return contentRetrievers.toString();
+    }
+
+    @GetMapping("testReranker")
+    public String testReranker(String query) {
+        if (query == null || query.isBlank()) {
+            query = "什么是Java？";
+        }
+
+        // 1. 获取 BGE-RERANKER 单例
+        OnnxScoringModel scoringModel = BgeScoringModel.getInstance();
+
+        // 2. 构造测试文档，模拟检索结果
+        List<Content> testContents = List.of(
+                Content.from(TextSegment.from("Java是一种面向对象的编程语言，具有跨平台、安全性高等特点，广泛应用于企业级开发。")),
+                Content.from(TextSegment.from("Python是一种解释型的高级编程语言，以简洁易读的语法著称，常用于数据科学和人工智能领域。")),
+                Content.from(TextSegment.from("JavaScript是一种脚本语言，主要用于Web前端开发，也可以通过Node.js进行服务端编程。")),
+                Content.from(TextSegment.from("Java虚拟机（JVM）是运行Java字节码的虚拟机，它使得Java具有跨平台能力。Spring是最流行的Java开发框架。")),
+                Content.from(TextSegment.from("Go语言由Google开发，以高并发和简洁语法为特色，常用于微服务和云原生开发。"))
+        );
+
+        // 3. 构建 ReRankingContentAggregator
+        ContentAggregator aggregator = ReRankingContentAggregator.builder()
+                .scoringModel(scoringModel)
+                .build();
+
+        // 4. 直接调用 ContentAggregator 进行重排序
+        Query queryObj = new Query(query);
+        List<Content> rerankedContents = aggregator.aggregate(Map.of(queryObj, List.of(testContents)));
+
+        // 5. 格式化输出结果
+        return rerankedContents.stream()
+                .map(content -> {
+                    TextSegment segment = content.textSegment();
+                    Double rerankedScore = (Double) content.metadata().get(ContentMetadata.RERANKED_SCORE);
+                    return String.format("[rerankedScore=%.4f] %s",
+                            rerankedScore != null ? rerankedScore : 0.0,
+                            segment.text());
+                })
+                .collect(Collectors.joining("\n\n---\n\n"));
     }
 
 

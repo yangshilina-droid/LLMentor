@@ -22,7 +22,7 @@ import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
  * KnowEngine 查询改写器
  * <p>
  * 基于 LLM 对用户查询进行智能改写优化，提升 RAG 检索效果。
- * 支持四种改写策略：
+ * 支持3种改写策略：
  * <ul>
  *   <li><b>简洁改写</b>：删除无意义的语气词、修饰词，将疑问句转为陈述句</li>
  *   <li><b>抽象概念改写</b>：将具体问题转化为更基础、更抽象的查询表述</li>
