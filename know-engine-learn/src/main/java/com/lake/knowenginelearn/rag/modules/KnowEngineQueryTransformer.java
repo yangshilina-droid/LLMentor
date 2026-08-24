@@ -140,6 +140,7 @@ public class KnowEngineQueryTransformer implements QueryTransformer {
         // 发送进度：开始问题改写
         if (progressCallback != null) {
             progressCallback.accept("[PROGRESS]:正在优化您的问题...");
+            System.out.println("[PROGRESS]:正在优化您的问题...");
         }
 
         log.info("开始问题改写, 原始问题: {}", query.text());

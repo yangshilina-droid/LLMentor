@@ -270,7 +270,7 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
         }
 
 
-        public KnowEngineElasticsearchContentRetriever.Builder stringRedisTemplate(
+        public KnowEngineElasticsearchContentRetriever.Builder knowledgeSegmentService(
                 KnowledgeSegmentService knowledgeSegmentService) {
             this.knowledgeSegmentService = knowledgeSegmentService;
             return this;

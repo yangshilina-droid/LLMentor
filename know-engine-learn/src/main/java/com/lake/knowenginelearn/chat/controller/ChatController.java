@@ -1,11 +1,12 @@
 package com.lake.knowenginelearn.chat.controller;
 
-import com.lake.knowenginelearn.ai.model.IntentRecognitionResult;
 import com.lake.knowenginelearn.ai.service.CommonChatService;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
 import com.lake.knowenginelearn.ai.service.TitleSummaryService;
 import com.lake.knowenginelearn.chat.entity.ChatConversation;
 import com.lake.knowenginelearn.chat.entity.ChatMessage;
+import com.lake.knowenginelearn.chat.entity.ChatParam;
+import com.lake.knowenginelearn.chat.service.ChatApplicationService;
 import com.lake.knowenginelearn.chat.service.ChatConversationService;
 import com.lake.knowenginelearn.chat.service.ChatMessageService;
 import dev.langchain4j.model.chat.ChatModel;
@@ -17,6 +18,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 import java.util.Map;
@@ -47,11 +50,17 @@ public class ChatController {
     @Autowired
     private ChatModel chatModel;
 
+    @Autowired
+    private ChatApplicationService chatApplicationService;
+
     /**
      * 流式对话接口
      * <p>
      * 入参：userId、content（用户问题）、conversationId（可选）
      * 返回：SSE 流，每个 token 逐字推送；流结束前推送一条 [DONE] 事件携带 conversationId
+     * <p>
+     * 进度通知格式：{@code [PROGRESS]:xxx...}，用于在前端展示当前处理阶段，减少等待焦虑。
+     * 推送环节包括：意图识别、问题改写、问题路由、排序筛选、生成回答等。
      *
      * @param userId         用户ID
      * @param content        用户问题
@@ -77,7 +86,7 @@ public class ChatController {
                 try {
                     OpenAiChatModel titleChatModel = OpenAiChatModel.builder()
                             .apiKey(chatModelApiKey)
-                            .modelName("qwen3.7-flash")
+                            .modelName("qwen3.5-flash")
                             .temperature(0.7)
                             .baseUrl(chatModelBaseUrl)
                             .customParameters(Map.of("enable_thinking", false))
@@ -99,23 +108,31 @@ public class ChatController {
         // 2. 保存用户消息
         String messageId = chatMessageService.saveUserMessage(finalConversationId, content);
 
-        // 3. 调用LLM流式对话
-        IntentRecognitionService intentRecognitionService = AiServices.builder(IntentRecognitionService.class)
-                .chatModel(chatModel)
-                .build();
-        IntentRecognitionResult intentRecognitionResult = intentRecognitionService.chat(content);
-
-        // 4. 如果用户问题不相关，使用一个通用的LLM做对话
-        if (!intentRecognitionResult.related()) {
-            return commonChatService
-                    .streamChat(userId, content)
-                    .concatWith(Flux.just("[DONE]:" + finalConversationId));
-        }
-
-        // TODO: 调用LLM流式对话，生成AI回复内容
-
-        // 4. 返回会话ID给前端
-        return Flux.just("[DONE]:" + finalConversationId);
+        // 3. 流式返回：先发送意图识别进度，再执行意图识别
+        //    使用 Mono.fromCallable + subscribeOn(boundedElastic) 将阻塞调用移到弹性线程池，
+        //    释放 WebFlux 事件循环，确保进度消息能立即 flush 到前端
+        return Flux.just("[PROGRESS]:正在识别您的意图...")
+                .concatWith(
+                        Mono.fromCallable(() -> {
+                                    IntentRecognitionService intentRecognitionService = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build();
+                                    return intentRecognitionService.chat(content);
+                                })
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .flatMapMany(intentRecognitionResult -> {
+                                    // 4. 如果用户问题不相关，使用一个通用的LLM做对话
+                                    if (!intentRecognitionResult.related()) {
+                                        return Flux.concat(
+                                                Flux.just("[PROGRESS]:正在为您生成回答..."),
+                                                commonChatService.streamChat(userId, content)
+                                        );
+                                    }
+                                    // 5. 相关问题，走RAG流程（进度由内部组件发出）
+                                    return chatApplicationService.chat(new ChatParam(userId, finalConversationId, messageId, content, intentRecognitionResult));
+                                })
+                )
+                .doOnError(e -> log.error("流式对话异常: conversationId={}", finalConversationId, e))
+                // 6. 在流末尾追加一条 [DONE] 事件，携带 conversationId
+                .concatWith(Mono.just("[DONE]:" + finalConversationId));
     }
 
     /**

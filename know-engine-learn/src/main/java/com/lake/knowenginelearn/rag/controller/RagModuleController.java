@@ -2,6 +2,7 @@ package com.lake.knowenginelearn.rag.controller;
 
 import com.alibaba.fastjson2.JSON;
 import com.lake.knowenginelearn.ai.model.IntentRecognitionResult;
+import com.lake.knowenginelearn.ai.service.CommonChatService;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
 import com.lake.knowenginelearn.ai.service.PromptService;
 import com.lake.knowenginelearn.chat.service.ChatMessageService;
@@ -15,11 +16,14 @@ import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRet
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.input.PromptTemplate;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.scoring.onnx.OnnxScoringModel;
+import dev.langchain4j.rag.DefaultRetrievalAugmentor;
+import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.ContentMetadata;
 import dev.langchain4j.rag.content.aggregator.ContentAggregator;
@@ -29,16 +33,19 @@ import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.elasticsearch.ElasticsearchContentRetriever;
 import dev.langchain4j.rag.query.Query;
+import dev.langchain4j.rag.query.router.DefaultQueryRouter;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationFullText;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationKnn;
 import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletResponse;
 import org.elasticsearch.client.RestClient;
 import org.neo4j.driver.Driver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Flux;
 
 import javax.sql.DataSource;
 import java.io.IOException;
@@ -131,7 +138,7 @@ public class RagModuleController {
                 .maxResults(MAX_RESULT)
                 .indexName(INDEX_NAME)
                 .minScore(MIN_SCORE)
-                .stringRedisTemplate(knowledgeSegmentService)
+                .knowledgeSegmentService(knowledgeSegmentService)
                 .build();
 
         KnowEngineQueryRouter knowEngineQueryRouter = new KnowEngineQueryRouter(
@@ -190,8 +197,59 @@ public class RagModuleController {
     }
 
     @GetMapping("testRetriever")
-    public String testRetriever() {
-        return "testRetriever";
+    public Flux<String> testRetriever(String query, String chatMessageId, HttpServletResponse response) {
+        response.setCharacterEncoding("UTF-8");
+
+        //        ElasticsearchConfiguration configuration = ElasticsearchConfigurationHybrid.builder().build();
+
+        //        ElasticsearchContentRetriever contentRetriever = ElasticsearchContentRetriever.builder()
+        //                .restClient(restClient)
+        //                .embeddingModel(openAiEmbeddingModel)
+        //                .configuration(configuration)
+        //                .maxResults(5)
+        //                .indexName("know-engine")
+        //                .minScore(0.5)
+        //                .build();
+
+        ElasticsearchContentRetriever fullTextRetriever = ElasticsearchContentRetriever.builder()
+                .restClient(restClient)
+                .configuration(ElasticsearchConfigurationFullText.builder().build())
+                .maxResults(MAX_RESULT)
+                .indexName(INDEX_NAME)
+                .minScore(MIN_SCORE)
+                .build();
+
+        KnowEngineElasticsearchContentRetriever embeddingRetriever = KnowEngineElasticsearchContentRetriever
+                .builder()
+                .restClient(restClient)
+                .embeddingModel(openAiEmbeddingModel)
+                .configuration(ElasticsearchConfigurationKnn.builder().build())
+                .maxResults(MAX_RESULT)
+                .indexName(INDEX_NAME)
+                .minScore(MIN_SCORE)
+                .knowledgeSegmentService(knowledgeSegmentService)
+                .build();
+
+
+        KnowEngineQueryTransformer queryTransformer = new KnowEngineQueryTransformer(chatModel, chatMessageId);
+
+        // 创建检索增强器
+        RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
+                .queryRouter(new DefaultQueryRouter(embeddingRetriever, fullTextRetriever))
+                .queryTransformer(queryTransformer)
+                .build();
+
+        CommonChatService aiService = AiServices.builder(CommonChatService.class)
+                .chatModel(chatModel)
+                .streamingChatModel(streamingChatModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(10))
+                .retrievalAugmentor(retrievalAugmentor)
+                .build();
+
+        Flux<String> result = aiService.streamChat(UUID.randomUUID().toString(), query);
+
+        return result;
+
     }
 
     @GetMapping("testPromptRouter")
