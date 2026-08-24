@@ -19,6 +19,7 @@ import com.lake.knowenginelearn.document.event.DocumentConvertedEvent;
 import com.lake.knowenginelearn.document.service.*;
 import com.lake.knowenginelearn.document.util.FileTypeUtil;
 import com.lake.knowenginelearn.infra.lock.DistributeLock;
+import com.lake.knowenginelearn.rag.constant.MetadataKeyConstant;
 import com.lake.knowenginelearn.rag.modules.splitter.DocumentSplitterFactory;
 import com.lake.knowenginelearn.rag.modules.splitter.ExcelSplitter;
 import dev.langchain4j.data.document.Document;
@@ -170,14 +171,14 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             TextSegment segment = segments.get(i);
             KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
             knowledgeSegment.setText(segment.text());
-            knowledgeSegment.setChunkId(segment.metadata().getString("chunkId"));
+            knowledgeSegment.setChunkId(segment.metadata().getString(MetadataKeyConstant.CHUNK_ID));
             //todo metadata统一处理
             knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
             knowledgeSegment.setDocumentId(document.getDocId());
             knowledgeSegment.setChunkOrder(i);
 
             // 检查是否需要跳过嵌入
-            Integer skipEmbedding = segment.metadata().getInteger("skipEmbedding");
+            Integer skipEmbedding = segment.metadata().getInteger(MetadataKeyConstant.SKIP_EMBEDDING);
             if (skipEmbedding != null && skipEmbedding == 1) {
                 knowledgeSegment.setSkipEmbedding(1);
                 knowledgeSegment.setStatus(SegmentStatus.STORED);

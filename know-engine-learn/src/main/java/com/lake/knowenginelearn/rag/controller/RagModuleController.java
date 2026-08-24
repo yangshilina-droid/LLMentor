@@ -1,5 +1,6 @@
 package com.lake.knowenginelearn.rag.controller;
 
+import com.alibaba.fastjson2.JSON;
 import com.lake.knowenginelearn.ai.model.IntentRecognitionResult;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
 import com.lake.knowenginelearn.ai.service.PromptService;
@@ -7,9 +8,11 @@ import com.lake.knowenginelearn.chat.service.ChatMessageService;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
 import com.lake.knowenginelearn.rag.modules.KnowEngineElasticsearchContentRetriever;
 import com.lake.knowenginelearn.rag.modules.KnowEngineQueryRouter;
+import com.lake.knowenginelearn.rag.modules.KnowEngineQueryTransformer;
 import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
 import dev.langchain4j.model.chat.ChatModel;
@@ -21,6 +24,8 @@ import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.ContentMetadata;
 import dev.langchain4j.rag.content.aggregator.ContentAggregator;
 import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
+import dev.langchain4j.rag.content.injector.ContentInjector;
+import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import dev.langchain4j.rag.content.retriever.ContentRetriever;
 import dev.langchain4j.rag.content.retriever.elasticsearch.ElasticsearchContentRetriever;
 import dev.langchain4j.rag.query.Query;
@@ -40,6 +45,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static com.lake.knowenginelearn.rag.config.ElasticSearchConfiguration.INDEX_NAME;
@@ -175,9 +181,12 @@ public class RagModuleController {
 
 
     @GetMapping("testTransformer")
-    public String testTransformer() {
-
-        return "testTransformer";
+    public String testTransformer(String content) {
+        String messageId = chatMessageService.saveUserMessage(UUID.randomUUID().toString(), content);
+        KnowEngineQueryTransformer knowEngineQueryTransformer = new KnowEngineQueryTransformer(chatModel, messageId);
+        Collection<Query> queries = knowEngineQueryTransformer.transform(new Query(content));
+        System.out.println(queries);
+        return JSON.toJSONString(queries);
     }
 
     @GetMapping("testRetriever")
@@ -190,4 +199,27 @@ public class RagModuleController {
         IntentRecognitionResult intentRecognitionResult = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build().chat(query);
         return promptService.getPrompt(intentRecognitionResult);
     }
+
+    /**
+     * 提示词+文档 拼接
+     */
+    @GetMapping("testPromptRouter1")
+    public String testPromptRouter1(String query) {
+
+
+        IntentRecognitionResult intentRecognitionResult = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build().chat(query);
+        String prompt = promptService.getPrompt(intentRecognitionResult);
+        ContentInjector contentInjector = new DefaultContentInjector(PromptTemplate.from(prompt));
+
+        List<Content> testContents = List.of(
+                Content.from(TextSegment.from("Java是一种面向对象的编程语言，具有跨平台、安全性高等特点，广泛应用于企业级开发。")),
+                Content.from(TextSegment.from("Python是一种解释型的高级编程语言，以简洁易读的语法著称，常用于数据科学和人工智能领域。")),
+                Content.from(TextSegment.from("JavaScript是一种脚本语言，主要用于Web前端开发，也可以通过Node.js进行服务端编程。")),
+                Content.from(TextSegment.from("Java虚拟机（JVM）是运行Java字节码的虚拟机，它使得Java具有跨平台能力。Spring是最流行的Java开发框架。")),
+                Content.from(TextSegment.from("Go语言由Google开发，以高并发和简洁语法为特色，常用于微服务和云原生开发。"))
+        );
+        System.out.println(JSON.toJSONString(contentInjector.inject(testContents, new UserMessage(query))));
+        return ((UserMessage) contentInjector.inject(testContents, new UserMessage(query))).singleText();
+    }
+
 }

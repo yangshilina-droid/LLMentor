@@ -66,7 +66,7 @@ public class BgeScoringModel {
                     log.info("模型路径: {}", modelPath);
                     log.info("Tokenizer路径: {}", tokenizerPath);
 
-                    instance = new OnnxScoringModel(modelPath, tokenizerPath);
+                    instance = new OnnxScoringModel(modelPath, tokenizerPath,8192);
 
                     log.info("BGE-RERANKER 评分模型初始化完成");
                 }
