@@ -11,6 +11,8 @@ import java.util.function.Consumer;
 
 /**
  * 带进度通知的内容聚合器
+ * 本质是带进度通知的代理，它自己不执行内容排序，而是在真实聚合器前后插入进度通知
+ *
  * <p>
  * 在委托执行 {@link ContentAggregator#aggregate(Map)} 前后发送进度通知，
  * 用于流式返回前端当前处理阶段，减少用户等待焦虑。
@@ -25,6 +27,7 @@ import java.util.function.Consumer;
  */
 public class ProgressAwareContentAggregator implements ContentAggregator {
 
+    // 被代理对象
     private final ContentAggregator delegate;
     private final Consumer<String> progressCallback;
 

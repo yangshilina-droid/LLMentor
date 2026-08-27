@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONException;
 import com.lake.knowenginelearn.infra.json.JsonUtil;
 import com.lake.knowenginelearn.rag.model.QueryRouteResult;
-import com.lake.knowenginelearn.rag.modules.splitter.ProgressAwareContentRetriever;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
 import dev.langchain4j.model.chat.ChatModel;

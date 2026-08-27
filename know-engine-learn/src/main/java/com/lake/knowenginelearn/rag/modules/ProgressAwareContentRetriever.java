@@ -1,4 +1,4 @@
-package com.lake.knowenginelearn.rag.modules.splitter;
+package com.lake.knowenginelearn.rag.modules;
 
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
@@ -27,6 +27,8 @@ public class ProgressAwareContentRetriever implements ContentRetriever {
     private final Consumer<String> progressCallback;
 
     /**
+     * 解决问题：RAG 流程可能把一个原始问题转换成多个查询
+     *
      * 确保路由进度只发送一次
      */
     private final AtomicBoolean embeddingProgressSent = new AtomicBoolean(false);

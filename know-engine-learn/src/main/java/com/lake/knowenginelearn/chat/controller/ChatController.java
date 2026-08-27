@@ -113,7 +113,12 @@ public class ChatController {
         //    释放 WebFlux 事件循环，确保进度消息能立即 flush 到前端
         return Flux.just("[PROGRESS]:正在识别您的意图...")
                 .concatWith(
+                        // 异步执行
+                        // 隔离阻塞任务，避免阻塞 Reactor 核心线程，从而提高系统在高并发下的吞吐量和可用性
+                        // fromCallable：我这里有一段同步代码。
+                        // boundedElastic：这段同步代码可能会阻塞，不要放到 Reactor 核心线程上执行，交给专门处理阻塞任务的线程池
                         Mono.fromCallable(() -> {
+                                    // 阻塞作用代码
                                     IntentRecognitionService intentRecognitionService = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build();
                                     return intentRecognitionService.chat(content);
                                 })

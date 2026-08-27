@@ -9,7 +9,7 @@ import com.lake.knowenginelearn.rag.modules.KnowEngineQueryRouter;
 import com.lake.knowenginelearn.rag.modules.KnowEngineQueryTransformer;
 import com.lake.knowenginelearn.rag.modules.ProgressAwareContentAggregator;
 import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
-import com.lake.knowenginelearn.rag.modules.splitter.ProgressAwareContentRetriever;
+import com.lake.knowenginelearn.rag.modules.ProgressAwareContentRetriever;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
@@ -94,6 +94,13 @@ public class ChatApplicationService {
      *
      * @param chatParam        对话参数
      * @param progressCallback 进度回调，可为 null
+     *
+     * 外部回调不为空【监控各 RAG 阶段】
+     * Flux：[PROGRESS]:正在排序筛选结果...
+     * 外部回调：[PROGRESS]:正在排序筛选结果...
+     *
+     * Flux：[PROGRESS]:正在生成回答...
+     * 外部回调：[PROGRESS]:正在生成回答...
      */
     public Flux<String> chat(ChatParam chatParam, Consumer<String> progressCallback) {
 
