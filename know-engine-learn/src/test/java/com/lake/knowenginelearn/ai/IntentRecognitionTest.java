@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONObject;
 import com.lake.knowenginelearn.ai.model.IntentRecognitionResult;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionOldPromptService;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
+import org.junit.Ignore;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,10 +17,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * 意图识别测试
@@ -29,6 +27,7 @@ import java.util.Map;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(TestConfig.class)
+@Ignore("集成测试，需要手动运行，会调用LLM API产生费用")
 public class IntentRecognitionTest {
 
     @Autowired
@@ -218,7 +217,7 @@ public class IntentRecognitionTest {
 
             long start = System.currentTimeMillis();
             try {
-                result.result = intentService.chat(tc.input);
+                result.result = intentService.chat(UUID.randomUUID().toString(),tc.input);
                 result.correct = checkResult(result.result, tc.expected);
                 if (result.correct) correctCount++;
             } catch (Exception e) {
@@ -355,7 +354,7 @@ public class IntentRecognitionTest {
             // 测试新版提示词
             long newStart = System.currentTimeMillis();
             try {
-                result.newPromptResult = intentService.chat(tc.input);
+                result.newPromptResult = intentService.chat(UUID.randomUUID().toString(),tc.input);
                 result.newPromptCorrect = checkResult(result.newPromptResult, tc.expected);
                 if (result.newPromptCorrect) newPromptCorrect++;
             } catch (Exception e) {
@@ -487,7 +486,7 @@ public class IntentRecognitionTest {
             IntentRecognitionResult newResult = null;
             boolean newCorrect = false;
             try {
-                newResult = intentService.chat(tc.input);
+                newResult = intentService.chat(UUID.randomUUID().toString(),tc.input);
                 newCorrect = checkResult(newResult, tc.expected);
                 if (newCorrect) newPromptCorrect++;
             } catch (Exception e) {
@@ -592,7 +591,7 @@ public class IntentRecognitionTest {
             IntentRecognitionResult newResult = null;
             boolean newCorrect = false;
             try {
-                newResult = intentService.chat(tc.input);
+                newResult = intentService.chat(UUID.randomUUID().toString(),tc.input);
                 newCorrect = checkResult(newResult, tc.expected);
                 if (newCorrect) newPromptCorrect++;
             } catch (Exception e) {
@@ -696,7 +695,7 @@ public class IntentRecognitionTest {
             IntentRecognitionResult newResult = null;
             boolean newCorrect = false;
             try {
-                newResult = intentService.chat(tc.input);
+                newResult = intentService.chat(UUID.randomUUID().toString(),tc.input);
                 newCorrect = (newResult != null && newResult.related() == tc.expected.related);
                 if (newCorrect) newPromptCorrect++;
             } catch (Exception e) {
@@ -755,7 +754,7 @@ public class IntentRecognitionTest {
             // 测试新版
             IntentRecognitionResult newResult = null;
             try {
-                newResult = intentService.chat(tc.input);
+                newResult = intentService.chat(UUID.randomUUID().toString(),tc.input);
             } catch (Exception e) {
                 // ignore
             }
@@ -804,7 +803,7 @@ public class IntentRecognitionTest {
 
         long start = System.currentTimeMillis();
         try {
-            IntentRecognitionResult result = intentService.chat(input);
+            IntentRecognitionResult result = intentService.chat(UUID.randomUUID().toString(),input);
             System.out.println("结果:");
             if (result != null) {
                 System.out.println("  是否汽车相关: " + result.related());
@@ -826,3 +825,4 @@ public class IntentRecognitionTest {
         System.out.println("耗时: " + (System.currentTimeMillis() - start) + "ms");
     }
 }
+

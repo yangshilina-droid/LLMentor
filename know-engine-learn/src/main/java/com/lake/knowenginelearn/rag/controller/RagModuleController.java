@@ -254,18 +254,15 @@ public class RagModuleController {
 
     @GetMapping("testPromptRouter")
     public String testPromptRouter(String query) {
-        IntentRecognitionResult intentRecognitionResult = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build().chat(query);
+        IntentRecognitionResult intentRecognitionResult = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build().chat(UUID.randomUUID().toString(), query);
         return promptService.getPrompt(intentRecognitionResult);
     }
 
-    /**
-     * 提示词+文档 拼接
-     */
     @GetMapping("testPromptRouter1")
     public String testPromptRouter1(String query) {
 
 
-        IntentRecognitionResult intentRecognitionResult = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build().chat(query);
+        IntentRecognitionResult intentRecognitionResult = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build().chat(UUID.randomUUID().toString(), query);
         String prompt = promptService.getPrompt(intentRecognitionResult);
         ContentInjector contentInjector = new DefaultContentInjector(PromptTemplate.from(prompt));
 

@@ -1,8 +1,11 @@
 package com.lake.knowenginelearn.rag.modules;
 
+
 import com.alibaba.fastjson2.JSON;
+import com.lake.knowenginelearn.chat.constant.RetrievalSource;
 import com.lake.knowenginelearn.chat.entity.ChatMessage;
 import com.lake.knowenginelearn.chat.service.ChatMessageService;
+import com.lake.knowenginelearn.rag.util.ReferenceUtil;
 import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.aggregator.ContentAggregator;
 import dev.langchain4j.rag.query.Query;
@@ -15,13 +18,10 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.*;
-import static dev.langchain4j.rag.content.ContentMetadata.RERANKED_SCORE;
+import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.DOC_ID;
 
 /**
  * 带进度通知的内容聚合器
- * 本质是带进度通知的代理，它自己不执行内容排序，而是在真实聚合器前后插入进度通知
- *
  * <p>
  * 在委托执行 {@link ContentAggregator#aggregate(Map)} 前后发送进度通知，
  * 用于流式返回前端当前处理阶段，减少用户等待焦虑。
@@ -66,16 +66,9 @@ public class ProgressAwareContentAggregator implements ContentAggregator {
                             content -> content.textSegment().metadata().getInteger(DOC_ID),
                             content -> content,
                             (existing, replacement) -> existing
-                    )).values().stream().map(content -> {
-                        ChatMessage.RagReference reference = new ChatMessage.RagReference();
-                        reference.setDocumentId(content.textSegment().metadata().getInteger(DOC_ID) + "");
-                        reference.setChunkId(content.textSegment().metadata().getString(CHUNK_ID));
-                        reference.setUrl(content.textSegment().metadata().getString(URL));
-                        reference.setDocumentTitle(content.textSegment().metadata().getString(FILE_NAME));
-                        reference.setChunkContent(content.textSegment().text());
-                        reference.setRerankScore((double) content.metadata().get(RERANKED_SCORE));
-                        return reference;
-                    }).collect(Collectors.toList());
+                    )).values().stream()
+                    .map(content -> ReferenceUtil.getRagReference(content, RetrievalSource.HYBRID))
+                    .collect(Collectors.toList());
 
             if (!CollectionUtils.isEmpty(ragReferences) && chatMessageService != null && chatMessageId != null) {
                 chatMessageService.updateRagReferences(chatMessageId, ragReferences);
@@ -99,5 +92,3 @@ public class ProgressAwareContentAggregator implements ContentAggregator {
         return results;
     }
 }
-
-

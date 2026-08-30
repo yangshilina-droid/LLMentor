@@ -6,12 +6,15 @@ import com.lake.knowenginelearn.ai.service.TitleSummaryService;
 import com.lake.knowenginelearn.chat.entity.ChatConversation;
 import com.lake.knowenginelearn.chat.entity.ChatMessage;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
+import com.lake.knowenginelearn.chat.memory.DatabaseChatMemoryStore;
 import com.lake.knowenginelearn.chat.service.ChatApplicationService;
 import com.lake.knowenginelearn.chat.service.ChatConversationService;
 import com.lake.knowenginelearn.chat.service.ChatMessageService;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,6 +55,17 @@ public class ChatController {
 
     @Autowired
     private ChatApplicationService chatApplicationService;
+
+    private IntentRecognitionService intentRecognitionService;
+
+    @Autowired
+    private DatabaseChatMemoryStore databaseChatMemoryStore;
+
+    @PostConstruct
+    public void init() {
+        intentRecognitionService = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder().id(memoryId).maxMessages(10).chatMemoryStore(databaseChatMemoryStore).build()).build();
+    }
 
     /**
      * 流式对话接口
@@ -107,38 +121,44 @@ public class ChatController {
 
         // 2. 保存用户消息
         String messageId = chatMessageService.saveUserMessage(finalConversationId, content);
+        String assistantMessageId = chatMessageService.saveAssistantMessage(finalConversationId);
+
+        // 清除该会话的内存缓存，确保从DB重新加载最新消息（含刚保存的用户消息）
+        databaseChatMemoryStore.evictCache(finalConversationId);
 
         // 3. 流式返回：先发送意图识别进度，再执行意图识别
         //    使用 Mono.fromCallable + subscribeOn(boundedElastic) 将阻塞调用移到弹性线程池，
         //    释放 WebFlux 事件循环，确保进度消息能立即 flush 到前端
         return Flux.just("[PROGRESS]:正在识别您的意图...")
                 .concatWith(
-                        // 异步执行
-                        // 隔离阻塞任务，避免阻塞 Reactor 核心线程，从而提高系统在高并发下的吞吐量和可用性
-                        // fromCallable：我这里有一段同步代码。
-                        // boundedElastic：这段同步代码可能会阻塞，不要放到 Reactor 核心线程上执行，交给专门处理阻塞任务的线程池
-                        Mono.fromCallable(() -> {
-                                    // 阻塞作用代码
-                                    IntentRecognitionService intentRecognitionService = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel).build();
-                                    return intentRecognitionService.chat(content);
-                                })
+                        Mono.fromCallable(() -> intentRecognitionService.chat(finalConversationId, content))
                                 .subscribeOn(Schedulers.boundedElastic())
                                 .flatMapMany(intentRecognitionResult -> {
+                                    // 意图识别完成后清除缓存，避免意图识别的AI响应污染后续RAG对话的历史记忆
+                                    databaseChatMemoryStore.evictCache(finalConversationId);
+
                                     // 4. 如果用户问题不相关，使用一个通用的LLM做对话
                                     if (!intentRecognitionResult.related()) {
+                                        StringBuilder contentBuilder = new StringBuilder();
                                         return Flux.concat(
                                                 Flux.just("[PROGRESS]:正在为您生成回答..."),
                                                 commonChatService.streamChat(userId, content)
+                                                        .doOnNext(token -> {
+                                                            contentBuilder.append(token);
+                                                        })
+                                                        .doOnComplete(() -> chatMessageService.updateContent(assistantMessageId, contentBuilder.toString()))
                                         );
                                     }
+
                                     // 5. 相关问题，走RAG流程（进度由内部组件发出）
-                                    return chatApplicationService.chat(new ChatParam(userId, finalConversationId, messageId, content, intentRecognitionResult));
+                                    return chatApplicationService.chat(new ChatParam(userId, finalConversationId, messageId, content, assistantMessageId, intentRecognitionResult));
                                 })
                 )
                 .doOnError(e -> log.error("流式对话异常: conversationId={}", finalConversationId, e))
                 // 6. 在流末尾追加一条 [DONE] 事件，携带 conversationId
                 .concatWith(Mono.just("[DONE]:" + finalConversationId));
     }
+
 
     /**
      * 查询指定用户的对话列表，按更新时间倒序排序
