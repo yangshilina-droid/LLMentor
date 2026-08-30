@@ -172,13 +172,19 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
             knowledgeSegment.setText(segment.text());
             knowledgeSegment.setChunkId(segment.metadata().getString(MetadataKeyConstant.CHUNK_ID));
-            //todo metadata统一处理
-            knowledgeSegment.setMetadata(JSON.toJSONString(segment.metadata().toMap()));
+            Metadata metadata = segment.metadata();
+            // 后续参考来源使用
+            metadata.put(MetadataKeyConstant.DOC_ID, document.getDocId());
+            metadata.put(MetadataKeyConstant.FILE_NAME, document.getDocTitle());
+            metadata.put(MetadataKeyConstant.URL, document.getDocUrl());
+
+            //todo metadata统一处理(权限相关、多版本相关）
+            knowledgeSegment.setMetadata(JSON.toJSONString(metadata.toMap()));
             knowledgeSegment.setDocumentId(document.getDocId());
             knowledgeSegment.setChunkOrder(i);
 
             // 检查是否需要跳过嵌入
-            Integer skipEmbedding = segment.metadata().getInteger(MetadataKeyConstant.SKIP_EMBEDDING);
+            Integer skipEmbedding = metadata.getInteger(MetadataKeyConstant.SKIP_EMBEDDING);
             if (skipEmbedding != null && skipEmbedding == 1) {
                 knowledgeSegment.setSkipEmbedding(1);
                 knowledgeSegment.setStatus(SegmentStatus.STORED);

@@ -48,11 +48,10 @@ public class KnowEngineQueryTransformer implements QueryTransformer {
     protected final ChatModel chatModel;
 
     protected final PromptTemplate promptTemplate;
-
     /**
      * assistant 消息的 messageId，用于回写改写结果
      */
-    private final String assistantMsgId;
+    private final String chatMessageId;
 
     /**
      * 进度回调，用于流式返回前端进度信息
@@ -120,18 +119,18 @@ public class KnowEngineQueryTransformer implements QueryTransformer {
             
             """);
 
-    public KnowEngineQueryTransformer(ChatModel chatModel, String assistantMsgId) {
-        this(chatModel, LG_AGENT_PROMPT, assistantMsgId, null);
+    public KnowEngineQueryTransformer(ChatModel chatModel, String chatMessageId) {
+        this(chatModel, LG_AGENT_PROMPT, chatMessageId, null);
     }
 
-    public KnowEngineQueryTransformer(ChatModel chatModel, String assistantMsgId, Consumer<String> progressCallback) {
-        this(chatModel, LG_AGENT_PROMPT, assistantMsgId, progressCallback);
+    public KnowEngineQueryTransformer(ChatModel chatModel, String chatMessageId, Consumer<String> progressCallback) {
+        this(chatModel, LG_AGENT_PROMPT, chatMessageId, progressCallback);
     }
 
-    public KnowEngineQueryTransformer(ChatModel chatModel, PromptTemplate promptTemplate, String assistantMsgId, Consumer<String> progressCallback) {
+    public KnowEngineQueryTransformer(ChatModel chatModel, PromptTemplate promptTemplate, String chatMessageId, Consumer<String> progressCallback) {
         this.promptTemplate = ensureNotNull(promptTemplate, "promptTemplate");
         this.chatModel = ensureNotNull(chatModel, "chatModel");
-        this.assistantMsgId = assistantMsgId;
+        this.chatMessageId = chatMessageId;
         this.progressCallback = progressCallback;
     }
 
@@ -155,15 +154,15 @@ public class KnowEngineQueryTransformer implements QueryTransformer {
         log.info("Compressed Success, source query: {}, compressed query: {}", query.text(), compressedQuery.text());
 
         // 异步回写改写结果到 chat_message
-        if (assistantMsgId != null) {
+        if (chatMessageId != null) {
             ChatMessageService chatMessageService = getChatMessageService();
             if (chatMessageService != null) {
-                Thread.ofVirtual().name("query-transform-" + assistantMsgId).start(() -> {
+                Thread.ofVirtual().name("query-transform-" + chatMessageId).start(() -> {
                     try {
-                        chatMessageService.updateTransformContent(assistantMsgId, newQuery);
-                        log.info("改写结果已回写: assistantMsgId={}, transformContent={}", assistantMsgId, response);
+                        chatMessageService.updateTransformContent(chatMessageId, newQuery);
+                        log.info("改写结果已回写: assistantMsgId={}, transformContent={}", chatMessageId, response);
                     } catch (Exception e) {
-                        log.warn("改写结果回写失败: assistantMsgId={}", assistantMsgId, e);
+                        log.warn("改写结果回写失败: assistantMsgId={}", chatMessageId, e);
                     }
                 });
             }

@@ -225,6 +225,48 @@
         .message.user .message-time {
             text-align: right;
         }
+        .message-references {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed #e0e0e0;
+        }
+        .references-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        .references-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .reference-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            background: #f0f4ff;
+            border: 1px solid #d0d8f0;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #4a6cf7;
+            text-decoration: none;
+            transition: background-color 0.2s, border-color 0.2s;
+            max-width: 100%;
+        }
+        .reference-item:hover {
+            background: #e0e8ff;
+            border-color: #4a6cf7;
+        }
+        .reference-index {
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .reference-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
         .typing-indicator {
             display: flex;
             gap: 4px;
@@ -550,15 +592,21 @@
             return;
         }
 
-        messagesContainer.innerHTML = messages.map(msg => `
-                <div class="message ${msg.type === 'USER' ? 'user' : 'assistant'}">
-                    <div class="message-avatar">${msg.type === 'USER' ? '👤' : '🤖'}</div>
-                    <div class="message-content">
-                        <div>${escapeHtml(msg.content)}</div>
-                        <div class="message-time">${formatTime(msg.createTime)}</div>
+        messagesContainer.innerHTML = messages.map(msg => {
+            const refsHtml = msg.ragReferences && msg.ragReferences.length > 0
+                ? buildReferencesHtml(msg.ragReferences)
+                : '';
+            return `
+                    <div class="message ${msg.type === 'USER' ? 'user' : 'assistant'}">
+                        <div class="message-avatar">${msg.type === 'USER' ? '👤' : '🤖'}</div>
+                        <div class="message-content">
+                            <div>${escapeHtml(msg.content)}</div>
+                            ${refsHtml}
+                            <div class="message-time">${formatTime(msg.createTime)}</div>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+        }).join('');
 
         scrollToBottom();
     }
@@ -637,6 +685,18 @@
                             updateProgressStatus(aiMessageElement, progressMsg);
                             continue;
                         }
+                        // 检查是否是引用资料
+                        if (data.startsWith('[REFERENCE]:')) {
+                            const refJson = data.substring(12).trim();
+                            try {
+                                const refs = JSON.parse(refJson);
+                                aiMessageElement.references = refs;
+                                renderReferences(aiMessageElement, refs);
+                            } catch (e) {
+                                console.error('解析引用数据失败:', e);
+                            }
+                            continue;
+                        }
                         // 累积内容（收到实际内容后，将最后一个进度标记为已完成）
                         if (fullContent === '') {
                             markAllProgressDone(aiMessageElement);
@@ -703,6 +763,54 @@
             }
         }
         scrollToBottom();
+    }
+
+    // 构建引用资料HTML
+    function buildReferencesHtml(references) {
+        if (!references || references.length === 0) return '';
+        const uniqueRefs = [];
+        const seen = new Set();
+        for (const ref of references) {
+            const key = (ref.documentTitle || '') + '|' + (ref.url || '');
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueRefs.push(ref);
+            }
+        }
+        return `
+                <div class="message-references">
+                    <div class="references-label">参考来源：</div>
+                    <div class="references-list">
+                        ${uniqueRefs.map((ref, idx) => `
+                            <a href="${ref.url || '#'}" target="_blank" class="reference-item" title="${escapeHtml(ref.documentTitle || '')}">
+                                <span class="reference-index">[${idx + 1}]</span>
+                                <span class="reference-title">${escapeHtml(ref.documentTitle || '未知文档')}</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+    }
+
+    // 渲染引用资料到消息元素
+    function renderReferences(messageElement, references) {
+        const contentEl = messageElement.querySelector('.message-content');
+        if (!contentEl) return;
+
+        // 移除已有的引用区域
+        const existingRefs = contentEl.querySelector('.message-references');
+        if (existingRefs) existingRefs.remove();
+
+        const refsHtml = buildReferencesHtml(references);
+        if (!refsHtml) return;
+
+        // 插入到 message-time 之前
+        const timeEl = contentEl.querySelector('.message-time');
+        if (timeEl) {
+            timeEl.insertAdjacentHTML('beforebegin', refsHtml);
+        } else {
+            contentEl.insertAdjacentHTML('beforeend', refsHtml);
+        }
     }
 
     // 移除打字指示器

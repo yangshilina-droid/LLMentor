@@ -1,13 +1,22 @@
 package com.lake.knowenginelearn.rag.modules;
 
+import com.alibaba.fastjson2.JSON;
+import com.lake.knowenginelearn.chat.entity.ChatMessage;
+import com.lake.knowenginelearn.chat.service.ChatMessageService;
 import dev.langchain4j.rag.content.Content;
 import dev.langchain4j.rag.content.aggregator.ContentAggregator;
 import dev.langchain4j.rag.query.Query;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.CollectionUtils;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
+import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.*;
+import static dev.langchain4j.rag.content.ContentMetadata.RERANKED_SCORE;
 
 /**
  * 带进度通知的内容聚合器
@@ -25,14 +34,19 @@ import java.util.function.Consumer;
  *
  * @see ContentAggregator
  */
+@Slf4j
 public class ProgressAwareContentAggregator implements ContentAggregator {
 
-    // 被代理对象
     private final ContentAggregator delegate;
     private final Consumer<String> progressCallback;
+    private final String chatMessageId;
+    private final ChatMessageService chatMessageService;
 
-    public ProgressAwareContentAggregator(ContentAggregator delegate, Consumer<String> progressCallback) {
+
+    public ProgressAwareContentAggregator(ContentAggregator delegate, Consumer<String> progressCallback, String chatMessageId, ChatMessageService chatMessageService) {
+        this.chatMessageService = chatMessageService;
         this.delegate = delegate;
+        this.chatMessageId = chatMessageId;
         this.progressCallback = progressCallback;
     }
 
@@ -44,7 +58,37 @@ public class ProgressAwareContentAggregator implements ContentAggregator {
             System.out.println("[PROGRESS]:正在排序筛选结果...");
         }
 
-        List<Content> result = delegate.aggregate(queryToContents);
+        List<Content> results = delegate.aggregate(queryToContents);
+
+        try {
+            List<ChatMessage.RagReference> ragReferences = results.stream()
+                    .collect(Collectors.toMap(
+                            content -> content.textSegment().metadata().getInteger(DOC_ID),
+                            content -> content,
+                            (existing, replacement) -> existing
+                    )).values().stream().map(content -> {
+                        ChatMessage.RagReference reference = new ChatMessage.RagReference();
+                        reference.setDocumentId(content.textSegment().metadata().getInteger(DOC_ID) + "");
+                        reference.setChunkId(content.textSegment().metadata().getString(CHUNK_ID));
+                        reference.setUrl(content.textSegment().metadata().getString(URL));
+                        reference.setDocumentTitle(content.textSegment().metadata().getString(FILE_NAME));
+                        reference.setChunkContent(content.textSegment().text());
+                        reference.setRerankScore((double) content.metadata().get(RERANKED_SCORE));
+                        return reference;
+                    }).collect(Collectors.toList());
+
+            if (!CollectionUtils.isEmpty(ragReferences) && chatMessageService != null && chatMessageId != null) {
+                chatMessageService.updateRagReferences(chatMessageId, ragReferences);
+            }
+
+            if (progressCallback != null) {
+                progressCallback.accept("[REFERENCE]:" + JSON.toJSONString(ragReferences));
+                System.out.println("[REFERENCE]:" + JSON.toJSONString(ragReferences));
+            }
+        } catch (Exception e) {
+            log.warn("RAG引用信息回写失败: assistantMsgId={}", chatMessageId, e);
+        }
+
 
         // 发送进度：聚合完成，即将进入LLM生成
         if (progressCallback != null) {
@@ -52,7 +96,8 @@ public class ProgressAwareContentAggregator implements ContentAggregator {
             System.out.println("[PROGRESS]:正在生成回答...");
         }
 
-        return result;
+        return results;
     }
 }
+
 

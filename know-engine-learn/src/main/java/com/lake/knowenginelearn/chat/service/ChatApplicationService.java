@@ -71,6 +71,9 @@ public class ChatApplicationService {
     @Autowired
     private OpenAiEmbeddingModel openAiEmbeddingModel;
 
+    @Autowired
+    private ChatMessageService chatMessageService;
+
     /**
      * 流式对话（无进度回调）
      */
@@ -94,13 +97,6 @@ public class ChatApplicationService {
      *
      * @param chatParam        对话参数
      * @param progressCallback 进度回调，可为 null
-     *
-     * 外部回调不为空【监控各 RAG 阶段】
-     * Flux：[PROGRESS]:正在排序筛选结果...
-     * 外部回调：[PROGRESS]:正在排序筛选结果...
-     *
-     * Flux：[PROGRESS]:正在生成回答...
-     * 外部回调：[PROGRESS]:正在生成回答...
      */
     public Flux<String> chat(ChatParam chatParam, Consumer<String> progressCallback) {
 
@@ -113,11 +109,12 @@ public class ChatApplicationService {
                         }
                     };
 
+                    String assistantMessageId = chatMessageService.saveAssistantMessage(chatParam.conversationId());
+
                     // 构建查询改写器（带进度回调）
                     KnowEngineQueryTransformer queryTransformer = new KnowEngineQueryTransformer(chatModel, chatParam.messageId(), callback);
 
-                    ProgressAwareContentRetriever embeddingRetriever = new ProgressAwareContentRetriever(
-                            KnowEngineElasticsearchContentRetriever.builder()
+                    ProgressAwareContentRetriever embeddingRetriever = new ProgressAwareContentRetriever(KnowEngineElasticsearchContentRetriever.builder()
                             .configuration(ElasticsearchConfigurationKnn.builder().build())
                             .maxResults(5)
                             .minScore(0.5)
@@ -127,29 +124,26 @@ public class ChatApplicationService {
                             .knowledgeSegmentService(knowledgeSegmentService)
                             .build(), callback);
 
-                    ProgressAwareContentRetriever fullTextRetriever = new ProgressAwareContentRetriever(
-                            ElasticsearchContentRetriever.builder()
-                                    .configuration(ElasticsearchConfigurationFullText.builder().build())
-                                    .restClient(restClient)
-                                    .indexName(INDEX_NAME)
-                                    .maxResults(5)
-                                    .build(), callback);
+                    ProgressAwareContentRetriever fullTextRetriever = new ProgressAwareContentRetriever(ElasticsearchContentRetriever.builder()
+                            .configuration(ElasticsearchConfigurationFullText.builder().build())
+                            .restClient(restClient)
+                            .indexName(INDEX_NAME)
+                            .maxResults(5)
+                            .build(), callback);
 
-                    ProgressAwareContentRetriever sqlRetriever = new ProgressAwareContentRetriever(
-                            SqlDatabaseContentRetriever.builder().dataSource(dataSource)
-                                    //todo
-                                    .promptTemplate(new PromptTemplate("textToSqlPrompt.getContentAsString(UTF_8)"))
-                                    .databaseStructure("tablesSql.getContentAsString(UTF_8)")
-                                    .chatModel(chatModel)
-                                    .build(), callback);
+                    ProgressAwareContentRetriever sqlRetriever = new ProgressAwareContentRetriever(SqlDatabaseContentRetriever.builder().dataSource(dataSource)
+                            //todo
+                            .promptTemplate(new PromptTemplate("textToSqlPrompt.getContentAsString(UTF_8)"))
+                            .databaseStructure("tablesSql.getContentAsString(UTF_8)")
+                            .chatModel(chatModel)
+                            .build(), callback);
 
-                    ProgressAwareContentRetriever neo4jRetriever = new ProgressAwareContentRetriever(
-                            Neo4jText2CypherRetriever.builder()
-                                    .graph(Neo4jGraph.builder()
-                                            .driver(neo4jDriver)
-                                            .build())
-                                    .chatModel(chatModel)
-                                    .build(), callback);
+                    ProgressAwareContentRetriever neo4jRetriever = new ProgressAwareContentRetriever(Neo4jText2CypherRetriever.builder()
+                            .graph(Neo4jGraph.builder()
+                                    .driver(neo4jDriver)
+                                    .build())
+                            .chatModel(chatModel)
+                            .build(), callback);
 
                     OnnxScoringModel scoringModel = BgeScoringModel.getInstance();
 
@@ -157,11 +151,11 @@ public class ChatApplicationService {
                     ContentAggregator contentAggregator = new ProgressAwareContentAggregator(
                             ReRankingContentAggregator.builder()
                                     .scoringModel(scoringModel)
+                                    .maxResults(5)
                                     .querySelector(queryToContents -> queryToContents.keySet().iterator().next())
                                     .build(),
-                            callback
+                            callback, assistantMessageId, chatMessageService
                     );
-
 
                     String prompt = promptService.getPrompt(chatParam.intentRecognitionResult());
 
@@ -169,8 +163,7 @@ public class ChatApplicationService {
 
                     // 构建查询路由器（带进度回调）
                     RetrievalAugmentor retrievalAugmentor = DefaultRetrievalAugmentor.builder()
-                            .queryRouter(new KnowEngineQueryRouter(
-                                    List.of(embeddingRetriever, fullTextRetriever, sqlRetriever, neo4jRetriever), chatModel, callback))
+                            .queryRouter(new KnowEngineQueryRouter(List.of(embeddingRetriever, fullTextRetriever, sqlRetriever, neo4jRetriever), chatModel, callback))
                             .queryTransformer(queryTransformer)
                             .contentAggregator(contentAggregator)
                             .contentInjector(contentInjector)
@@ -185,19 +178,21 @@ public class ChatApplicationService {
 
                     // 订阅 LLM 流式输出，桥接到 sink
                     AtomicBoolean firstToken = new AtomicBoolean(true);
+                    StringBuilder contentBuilder = new StringBuilder();
                     Disposable disposable = knowEngineChatAiService.streamChat(chatParam.conversationId(), chatParam.content())
-                            .subscribe(
-                                    token -> {
-                                        // 首个 token 到达时，如果之前没有发出"正在生成回答"，则补发
-                                        // （正常情况下由 ProgressAwareContentAggregator 已发出，此处为兜底）
-                                        if (firstToken.compareAndSet(true, false)) {
-                                            // 标记已开始接收 token
-                                        }
-                                        sink.next(token);
-                                    },
-                                    sink::error,
-                                    sink::complete
-                            );
+                            // 流式输出，每输出一段文字触发该事件。每收到一个 token 都会执行一次
+                            .doOnNext(token -> {
+                                // 首个 token 到达时，如果之前没有发出"正在生成回答"，则补发
+                                // （正常情况下由 ProgressAwareContentAggregator 已发出，此处为兜底）
+                                if (firstToken.compareAndSet(true, false)) {
+                                    // 标记已开始接收 token
+                                }
+
+                                contentBuilder.append(token);
+                            })
+                            // 流式输出完成触发该事件，更新模型返回内容。上游 Flux 正常完成时执行一次
+                            .doOnComplete(() -> chatMessageService.updateContent(assistantMessageId, contentBuilder.toString()))
+                            .subscribe(sink::next, sink::error, sink::complete);
 
                     // 取消时同步取消内部订阅
                     sink.onCancel(disposable::dispose);
