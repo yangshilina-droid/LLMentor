@@ -28,6 +28,9 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Redis Key 格式: know-engine:chat-memory:{conversationId}
  * TTL: 1 小时（自动过期，避免冷数据长期占用内存）
+ *
+ * com.lake.knowenginelearn.chat.entity.ChatMessage：数据库持久化实体
+ * dev.langchain4j.data.message.ChatMessage：LangChain4j 对话上下文模型
  */
 @Slf4j
 @Component
