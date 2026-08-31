@@ -1,5 +1,7 @@
 package com.lake.knowenginelearn.ai;
 
+
+import com.lake.knowenginelearn.rag.controller.RagModuleController;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchEmbeddingStore;
@@ -10,6 +12,8 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+
+import javax.sql.DataSource;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -30,6 +34,9 @@ public class TestConfig {
     @MockBean
     private RestClient restClient;
 
+    @MockBean
+    private RagModuleController ragModuleController;
+
     /**
      * 创建一个模拟的 ElasticsearchEmbeddingStore
      * 配置 search 方法返回空的 EmbeddingSearchResult，避免空指针异常
@@ -42,5 +49,14 @@ public class TestConfig {
         when(mockStore.search(any(EmbeddingSearchRequest.class)))
                 .thenReturn(new EmbeddingSearchResult<>(java.util.Collections.emptyList()));
         return mockStore;
+    }
+
+    /**
+     * 创建一个模拟的 DataSource，避免测试时连接数据库
+     */
+    @Bean
+    @Primary
+    public DataSource mockDataSource() {
+        return Mockito.mock(DataSource.class);
     }
 }

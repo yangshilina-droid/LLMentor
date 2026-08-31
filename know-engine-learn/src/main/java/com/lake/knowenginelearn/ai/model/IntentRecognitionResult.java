@@ -27,6 +27,9 @@ public record IntentRecognitionResult(
             @JsonPropertyDescription("用户提到的具体汽车型号，如：Model 3、A6L、汉兰达")
             String car_model,
 
+            @JsonPropertyDescription("用户提到的具体汽车ID，如：100001、200002、300003")
+            String car_id,
+
             @JsonPropertyDescription("订单号、合同号或服务单编号")
             String order_id,
 
