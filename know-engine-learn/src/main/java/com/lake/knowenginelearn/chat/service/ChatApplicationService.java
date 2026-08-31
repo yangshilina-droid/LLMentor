@@ -218,6 +218,7 @@ public class ChatApplicationService {
                                     .maxMessages(10)
                                     .chatMemoryStore(databaseChatMemoryStore)
                                     .build())
+                            //
                             .systemMessage(prompt)
                             .retrievalAugmentor(retrievalAugmentor)
                             .build();
