@@ -104,20 +104,21 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             FileProcessService fileProcessService = fileProcessServiceFactory.get(FileTypeUtil.getFileType(fileName, documentUploadParam.file()), document.getKnowledgeBaseType());
             if (fileProcessService != null) {
                 fileProcessService.processDocument(document, documentUploadParam.file().getInputStream());
+            } else {
+                if (document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH) {
+                    document.setStatus(DocumentStatus.CONVERTED);
+                    document.setConvertedDocUrl(fileUrl);
+                    result = knowledgeDocumentService.updateById(document);
+                    Assert.isTrue(result, "文件状态更新失败");
+                } else {
+                    // excel不用转换，直接将每行数据存储到数据库
+                    document.setStatus(DocumentStatus.STORED);
+                    document.setConvertedDocUrl(fileUrl);
+                    result = knowledgeDocumentService.updateById(document);
+                    Assert.isTrue(result, "文件状态更新失败");
+                }
             }
 
-            if (document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH) {
-                document.setStatus(DocumentStatus.CONVERTED);
-                document.setConvertedDocUrl(fileUrl);
-                result = knowledgeDocumentService.updateById(document);
-                Assert.isTrue(result, "文件状态更新失败");
-            } else {
-                // excel不用转换，直接将每行数据存储到数据库
-                document.setStatus(DocumentStatus.STORED);
-                document.setConvertedDocUrl(fileUrl);
-                result = knowledgeDocumentService.updateById(document);
-                Assert.isTrue(result, "文件状态更新失败");
-            }
             return document;
         } catch (Exception e) {
             throw new IOException("文件上传失败: " + e.getMessage(), e);
