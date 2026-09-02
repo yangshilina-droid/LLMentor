@@ -12,12 +12,13 @@ import com.lake.knowenginelearn.business.service.CarInfoService;
 import com.lake.knowenginelearn.business.service.MyCarService;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
 import com.lake.knowenginelearn.chat.memory.DatabaseChatMemoryStore;
+import com.lake.knowenginelearn.document.entity.TableMeta;
+import com.lake.knowenginelearn.document.service.KnowEngineTableMetaService;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
 import com.lake.knowenginelearn.rag.modules.*;
 import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
-import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
@@ -51,6 +52,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static com.lake.knowenginelearn.rag.config.ElasticSearchConfiguration.INDEX_NAME;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -76,6 +78,9 @@ public class ChatApplicationService {
 
     @Autowired
     private DataSource dataSource;
+
+    @Autowired
+    private KnowEngineTableMetaService knowEngineTableMetaService;
 
     @Autowired
     private PromptService promptService;
@@ -184,11 +189,13 @@ public class ChatApplicationService {
 
                     ProgressAwareContentRetriever sqlRetriever = null;
                     try {
+                        // 拼接静态表结构 + table_meta 中动态创建的表结构
+                        String databaseStructure = buildDatabaseStructure();
                         sqlRetriever = new ProgressAwareContentRetriever(
                                 KnowEngineSqlDatabaseContentRetriever.builder()
                                         .dataSource(dataSource)
                                         .promptTemplate(new PromptTemplate(textToSqlPrompt.getContentAsString(UTF_8)))
-                                        .databaseStructure(tablesSql.getContentAsString(UTF_8))
+                                        .databaseStructure(databaseStructure)
                                         .chatModel(chatModel)
                                         .fallbackRetriever(embeddingRetriever)
                                         .build(), processCallback);
@@ -267,5 +274,29 @@ public class ChatApplicationService {
                 // publishOn 引入异步边界：boundedElastic 线程专用于执行阻塞 RAG 操作，
                 // parallel 线程独立运行 drain loop，确保进度消息能及时推送到前端 SSE 响应
                 .publishOn(Schedulers.parallel());
+    }
+
+    /**
+     * 构建数据库结构描述
+     * <p>
+     * 将静态表结构（retrieve_tables.sql）与 table_meta 表中动态创建的表结构合并，
+     * 作为 Text2SQL Prompt 的 databaseStructure 参数，使 LLM 感知所有可查询的表。
+     */
+    private String buildDatabaseStructure() throws IOException {
+        StringBuilder sb = new StringBuilder();
+        // 静态表结构
+        sb.append(tablesSql.getContentAsString(UTF_8));
+
+        // 从 table_meta 读取动态创建的表结构
+        List<TableMeta> tableMetas = knowEngineTableMetaService.list();
+        if (!CollectionUtils.isEmpty(tableMetas)) {
+            sb.append("\n\n");
+            String dynamicSql = tableMetas.stream()
+                    .filter(meta -> meta.getCreateSql() != null && !meta.getCreateSql().isBlank())
+                    .map(TableMeta::getCreateSql)
+                    .collect(Collectors.joining("\n\n"));
+            sb.append(dynamicSql);
+        }
+        return sb.toString();
     }
 }
