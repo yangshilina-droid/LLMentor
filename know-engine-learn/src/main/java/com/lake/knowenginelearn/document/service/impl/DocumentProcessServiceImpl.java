@@ -78,7 +78,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     private String bucketName;
 
     @Override
-    @DistributeLock(scene = "document-upload", keyExpression = "#uploadUser", waitTime = 0)
+    @DistributeLock(scene = "document-upload", keyExpression = "#documentUploadParam.uploadUser", waitTime = 0)
     public KnowledgeDocument upload(DocumentUploadParam documentUploadParam) throws IOException {
         try {
             log.info("start to upload ....");

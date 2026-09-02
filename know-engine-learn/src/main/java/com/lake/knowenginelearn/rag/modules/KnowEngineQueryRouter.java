@@ -132,7 +132,6 @@ public class KnowEngineQueryRouter implements QueryRouter {
         String response = chatModel.chat(createPrompt(query).text());
 
         try {
-            // 修复并解析 JSON 字符串，保证稳定输出json字符串
             QueryRouteResult queryRouteResult = JSON.parseObject(JsonUtil.fixJson(response), QueryRouteResult.class);
             String strategy = queryRouteResult.strategy();
             log.info("Route Success , query: {} , strategy: {}", query, strategy);
@@ -142,10 +141,11 @@ public class KnowEngineQueryRouter implements QueryRouter {
                     return contentRetrievers.stream().filter(retriever ->
                     {
                         if (retriever instanceof ProgressAwareContentRetriever) {
-                            return ((ProgressAwareContentRetriever) retriever).getDelegate() instanceof SqlDatabaseContentRetriever;
+                            ContentRetriever delegate = ((ProgressAwareContentRetriever) retriever).getDelegate();
+                            return delegate instanceof SqlDatabaseContentRetriever || delegate instanceof KnowEngineSqlDatabaseContentRetriever;
                         }
 
-                        return retriever instanceof SqlDatabaseContentRetriever;
+                        return retriever instanceof SqlDatabaseContentRetriever || retriever instanceof KnowEngineSqlDatabaseContentRetriever;
 
                     }).collect(Collectors.toList());
                 case "graph_db":

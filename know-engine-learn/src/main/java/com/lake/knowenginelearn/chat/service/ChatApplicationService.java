@@ -34,9 +34,12 @@ import dev.langchain4j.rag.content.retriever.elasticsearch.ElasticsearchContentR
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationFullText;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationKnn;
+import lombok.extern.slf4j.Slf4j;
 import org.elasticsearch.client.RestClient;
 import org.neo4j.driver.Driver;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import reactor.core.Disposable;
@@ -44,13 +47,16 @@ import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import javax.sql.DataSource;
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import static com.lake.knowenginelearn.rag.config.ElasticSearchConfiguration.INDEX_NAME;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Service
+@Slf4j
 public class ChatApplicationService {
 
     @Autowired
@@ -88,6 +94,12 @@ public class ChatApplicationService {
 
     @Autowired
     private DatabaseChatMemoryStore databaseChatMemoryStore;
+
+    @Value("classpath:prompts/text-to-sql-prompt.txt")
+    private Resource textToSqlPrompt;
+
+    @Value("classpath:sql/retrieve_tables.sql")
+    private Resource tablesSql;
 
     /**
      * 流式对话
@@ -170,13 +182,19 @@ public class ChatApplicationService {
                                     .maxResults(5)
                                     .build(), processCallback);
 
-                    ProgressAwareContentRetriever sqlRetriever = new ProgressAwareContentRetriever(
-                            SqlDatabaseContentRetriever.builder().dataSource(dataSource)
-                                    //todo
-                                    .promptTemplate(new PromptTemplate("textToSqlPrompt.getContentAsString(UTF_8)"))
-                                    .databaseStructure("tablesSql.getContentAsString(UTF_8)")
-                                    .chatModel(chatModel)
-                                    .build(), processCallback);
+                    ProgressAwareContentRetriever sqlRetriever = null;
+                    try {
+                        sqlRetriever = new ProgressAwareContentRetriever(
+                                KnowEngineSqlDatabaseContentRetriever.builder()
+                                        .dataSource(dataSource)
+                                        .promptTemplate(new PromptTemplate(textToSqlPrompt.getContentAsString(UTF_8)))
+                                        .databaseStructure(tablesSql.getContentAsString(UTF_8))
+                                        .chatModel(chatModel)
+                                        .fallbackRetriever(embeddingRetriever)
+                                        .build(), processCallback);
+                    } catch (IOException e) {
+                        log.warn("Error creating SQL retriever", e);
+                    }
 
                     ProgressAwareContentRetriever neo4jRetriever = new ProgressAwareContentRetriever(
                             Neo4jText2CypherRetriever.builder()
