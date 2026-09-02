@@ -218,7 +218,11 @@ public class ChatApplicationService {
                                     .maxMessages(10)
                                     .chatMemoryStore(databaseChatMemoryStore)
                                     .build())
-                            //
+                            // 设置系统提示词
+                            // 1. 为当前 AI Service 明确指定正确的任务角色。
+                            // 2. 避免继续沿用对话记忆里的意图识别提示词。
+                            // 3. 让检索到的资料服务于“回答问题”，而不是服务于“判断意图”。
+                            // 4. 根据 intentRecognitionResult() 动态切换不同业务提示词
                             .systemMessage(prompt)
                             .retrievalAugmentor(retrievalAugmentor)
                             .build();
