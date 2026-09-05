@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.CollectionUtils;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -77,7 +78,8 @@ public class ProgressAwareContentAggregator implements ContentAggregator {
                     .collect(Collectors.toMap(
                             content -> content.textSegment().metadata().getString(CHUNK_ID),
                             content -> content,
-                            (existing, replacement) -> existing
+                            (existing, replacement) -> existing,
+                            LinkedHashMap::new
                     )).values().stream()
                     .map(content -> ReferenceUtil.getRagReference(content, RetrievalSource.HYBRID))
                     .collect(Collectors.toList());

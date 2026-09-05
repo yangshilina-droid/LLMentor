@@ -28,7 +28,6 @@ import dev.langchain4j.model.scoring.onnx.OnnxScoringModel;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
 import dev.langchain4j.rag.content.aggregator.ContentAggregator;
-import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.injector.ContentInjector;
 import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import dev.langchain4j.service.AiServices;
@@ -217,6 +216,7 @@ public class ChatApplicationService {
                     ContentAggregator contentAggregator = new ProgressAwareContentAggregator(
                             KnowEngineReRankingContentAggregator.builder()
                                     .scoringModel(scoringModel)
+                                    .minScore(0.6)
                                     .maxResults(5)
                                     .querySelector(queryToContents -> queryToContents.keySet().iterator().next())
                                     .build(),
