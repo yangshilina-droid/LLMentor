@@ -31,7 +31,6 @@ import dev.langchain4j.rag.content.aggregator.ContentAggregator;
 import dev.langchain4j.rag.content.aggregator.ReRankingContentAggregator;
 import dev.langchain4j.rag.content.injector.ContentInjector;
 import dev.langchain4j.rag.content.injector.DefaultContentInjector;
-import dev.langchain4j.rag.content.retriever.elasticsearch.ElasticsearchContentRetriever;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationFullText;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationKnn;
@@ -179,13 +178,14 @@ public class ChatApplicationService {
                             .knowledgeSegmentService(knowledgeSegmentService)
                             .build(), processCallback);
 
-                    ProgressAwareContentRetriever fullTextRetriever = new ProgressAwareContentRetriever(
-                            ElasticsearchContentRetriever.builder()
-                                    .configuration(ElasticsearchConfigurationFullText.builder().build())
-                                    .restClient(restClient)
-                                    .indexName(INDEX_NAME)
-                                    .maxResults(5)
-                                    .build(), processCallback);
+                    ProgressAwareContentRetriever fullTextRetriever = new ProgressAwareContentRetriever(KnowEngineElasticsearchContentRetriever.builder()
+                            .configuration(ElasticsearchConfigurationFullText.builder().build())
+                            .restClient(restClient)
+                            .embeddingModel(openAiEmbeddingModel)
+                            .knowledgeSegmentService(knowledgeSegmentService)
+                            .indexName(INDEX_NAME)
+                            .maxResults(5)
+                            .build(), processCallback);
 
                     ProgressAwareContentRetriever sqlRetriever = null;
                     try {
@@ -215,7 +215,7 @@ public class ChatApplicationService {
 
                     // 使用带进度通知的聚合器包装原始聚合器
                     ContentAggregator contentAggregator = new ProgressAwareContentAggregator(
-                            ReRankingContentAggregator.builder()
+                            KnowEngineReRankingContentAggregator.builder()
                                     .scoringModel(scoringModel)
                                     .maxResults(5)
                                     .querySelector(queryToContents -> queryToContents.keySet().iterator().next())
