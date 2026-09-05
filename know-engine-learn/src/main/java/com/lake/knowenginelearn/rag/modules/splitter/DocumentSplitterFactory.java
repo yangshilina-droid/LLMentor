@@ -12,7 +12,7 @@ import dev.langchain4j.data.document.splitter.DocumentByWordSplitter;
 public class DocumentSplitterFactory {
     public static DocumentSplitter getInstance(DocumentSplitParam documentSplitParam) {
         if (SplitType.TITLE.name().equals(documentSplitParam.splitType())) {
-            return new MarkdownHeaderParentTextSplitter(documentSplitParam.chunkSize(), documentSplitParam.overlap());
+            return new MarkdownHeaderParentTextSplitter(documentSplitParam.titleLevel(), false, false, documentSplitParam.chunkSize(), documentSplitParam.overlap());
         }
 
         if (SplitType.LENGTH.name().equals(documentSplitParam.splitType())) {

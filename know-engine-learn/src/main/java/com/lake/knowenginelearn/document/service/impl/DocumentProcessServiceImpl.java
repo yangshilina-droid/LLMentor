@@ -240,7 +240,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
         Page<KnowledgeSegment> page = knowledgeSegmentService.page(new Page<>(1, 100), queryWrapper);
 
-        while (page.getCurrent() == 1 || page.hasNext()) {
+        while (page.hasNext()) {
             List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
             List<TextSegment> textSegments = textSegmentsToEmbed.stream().map(segment -> TextSegment.from(segment.getText(), Metadata.from(segment.getMetadataMap()))).toList();
             // 获取嵌入向量
