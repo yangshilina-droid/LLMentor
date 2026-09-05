@@ -13,12 +13,14 @@ import dev.langchain4j.service.AiServices;
 import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -101,9 +103,10 @@ public class DatasetController {
                 .blockLast();
 
         String answer = answerBuilder.toString();
-        List<String> referenceContents = chatMessageService.getByMessageId(assistantMessageId).getRagReferences().stream().map(
-                ChatMessage.RagReference::getChunkContent).collect(
-                Collectors.toList());
+        List<String> referenceContents = new ArrayList<>();
+        if (!CollectionUtils.isEmpty(chatMessageService.getByMessageId(assistantMessageId).getRagReferences())){
+            referenceContents = chatMessageService.getByMessageId(assistantMessageId).getRagReferences().stream().map(ChatMessage.RagReference::getChunkContent).collect(Collectors.toList());
+        }
 
         log.info("数据集生成完成: conversationId={}, answerLength={}, refsCount={}",
                 conversationId, answer.length(), referenceContents.size());
