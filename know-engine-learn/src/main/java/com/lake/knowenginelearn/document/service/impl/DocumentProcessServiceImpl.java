@@ -261,7 +261,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             }
 
             // 继续扫描下一页
-            page = knowledgeSegmentService.page(new Page<>(page.getCurrent() + 1, 100), queryWrapper);
+            page = knowledgeSegmentService.page(new Page<>(page.getCurrent(), 100), queryWrapper);
         }
 
         //double check
