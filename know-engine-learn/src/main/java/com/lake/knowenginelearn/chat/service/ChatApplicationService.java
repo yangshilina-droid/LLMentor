@@ -1,13 +1,8 @@
 package com.lake.knowenginelearn.chat.service;
 
-import com.alibaba.fastjson2.JSON;
 import com.lake.knowenginelearn.ai.constant.KnowEngineIntent;
 import com.lake.knowenginelearn.ai.service.KnowEngineChatAiService;
 import com.lake.knowenginelearn.ai.service.PromptService;
-import com.lake.knowenginelearn.business.converter.CarInfoConverter;
-import com.lake.knowenginelearn.business.converter.MyCarConverter;
-import com.lake.knowenginelearn.business.entity.CarInfo;
-import com.lake.knowenginelearn.business.entity.MyCar;
 import com.lake.knowenginelearn.business.service.CarInfoService;
 import com.lake.knowenginelearn.business.service.MyCarService;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
@@ -24,6 +19,7 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.input.PromptTemplate;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.scoring.onnx.OnnxScoringModel;
 import dev.langchain4j.rag.DefaultRetrievalAugmentor;
 import dev.langchain4j.rag.RetrievalAugmentor;
@@ -33,6 +29,7 @@ import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationFullText;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationKnn;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.elasticsearch.client.RestClient;
 import org.neo4j.driver.Driver;
@@ -48,6 +45,7 @@ import reactor.core.scheduler.Schedulers;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -98,11 +96,36 @@ public class ChatApplicationService {
     @Autowired
     private DatabaseChatMemoryStore databaseChatMemoryStore;
 
+    @Value("${langchain4j.open-ai.chat-model.api-key}")
+    private String chatModelApiKey;
+
+    @Value("${langchain4j.open-ai.chat-model.base-url}")
+    private String chatModelBaseUrl;
+
     @Value("classpath:prompts/text-to-sql-prompt.txt")
     private Resource textToSqlPrompt;
 
     @Value("classpath:sql/retrieve_tables.sql")
     private Resource tablesSql;
+
+    /**
+     * RAG 对话生成专用 ChatModel，使用更强的模型和较低温度以提升回答质量
+     */
+    private StreamingChatModel ragChatModel;
+
+    @PostConstruct
+    public void init() {
+        ragChatModel = OpenAiStreamingChatModel.builder()
+                .apiKey(chatModelApiKey)
+                .baseUrl(chatModelBaseUrl)
+                .modelName("qwen3.7-max")
+                .logRequests(true)
+                .logRequests(true)
+                .temperature(0.2)
+                .topP(0.9)
+                .customParameters(Map.of("enable_thinking", false))
+                .build();
+    }
 
     /**
      * 流式对话
@@ -116,27 +139,27 @@ public class ChatApplicationService {
         KnowEngineIntent intent = KnowEngineIntent.getIntent(chatParam.intentRecognitionResult());
 
         // 如果是维保服务、技术支持，则需要车辆信息
-        if (intent == KnowEngineIntent.CAR_MAINTENANCE
-                || intent == KnowEngineIntent.CAR_TECH_SUPPORT) {
-            if (chatParam.intentRecognitionResult().entities().car_id() == null) {
-                List<MyCar> myCars = myCarService.getCarByUserId(chatParam.userId());
-                if (CollectionUtils.isEmpty(myCars)) {
-                    return Flux.just("[WARN]:您还没有添加车辆信息，请先添加车辆信息");
-                } else if (myCars.size() >= 1) {
-                    return Flux.just("[CARD]:请先选择车辆")
-                            .concatWith(Flux.just("[CARD_CHOICE_MYCAR]:" + JSON.toJSONString(MyCarConverter.INSTANCE.toVOList(myCars))));
-                }
-            }
-        }
+        // if (intent == KnowEngineIntent.CAR_MAINTENANCE
+        //         || intent == KnowEngineIntent.CAR_TECH_SUPPORT) {
+        //     if (chatParam.intentRecognitionResult().entities().car_id() == null) {
+        //         List<MyCar> myCars = myCarService.getCarByUserId(chatParam.userId());
+        //         if (CollectionUtils.isEmpty(myCars)) {
+        //             return Flux.just("[WARN]:您还没有添加车辆信息，请先添加车辆信息");
+        //         } else if (myCars.size() >= 1) {
+        //             return Flux.just("[CARD]:请先选择车辆")
+        //                     .concatWith(Flux.just("[CARD_CHOICE_MYCAR]:" + JSON.toJSONString(MyCarConverter.INSTANCE.toVOList(myCars))));
+        //         }
+        //     }
+        // }
 
         // 如果是营销政策，则需要车辆信息
-        if (intent == KnowEngineIntent.CAR_MARKETING) {
-            if (chatParam.intentRecognitionResult().entities().car_model() == null) {
-                List<CarInfo> carInfoList = carInfoService.getCarInfoByBrand(null);
-                return Flux.just("[CARD]:请先选择您要咨询的车辆")
-                        .concatWith(Flux.just("[CARD_CHOICE_CAR]:" + JSON.toJSONString(CarInfoConverter.INSTANCE.toVOList(carInfoList))));
-            }
-        }
+        // if (intent == KnowEngineIntent.CAR_MARKETING) {
+        //     if (chatParam.intentRecognitionResult().entities().car_model() == null) {
+        //         List<CarInfo> carInfoList = carInfoService.getCarInfoByBrand(null);
+        //         return Flux.just("[CARD]:请先选择您要咨询的车辆")
+        //                 .concatWith(Flux.just("[CARD_CHOICE_CAR]:" + JSON.toJSONString(CarInfoConverter.INSTANCE.toVOList(carInfoList))));
+        //     }
+        // }
 
         return doChat(chatParam);
     }
@@ -236,8 +259,8 @@ public class ChatApplicationService {
                             .build();
 
                     KnowEngineChatAiService knowEngineChatAiService = AiServices.builder(KnowEngineChatAiService.class)
-                            .chatModel(chatModel)
-                            .streamingChatModel(streamingChatModel)
+                            // .chatModel(chatModel)
+                            .streamingChatModel(ragChatModel)
                             .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder()
                                     .id(memoryId)
                                     .maxMessages(10)
