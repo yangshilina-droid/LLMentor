@@ -236,3 +236,28 @@ create TABLE IF NOT EXISTS `car_order` (
     KEY `idx_order_status` (`order_status`),
     KEY `idx_order_type` (`order_type`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment='车辆订单表';
+
+-- 员工信息表
+create TABLE IF NOT EXISTS `staff_info` (
+                                            `id`                      BIGINT       NOT NULL AUTO_INCREMENT comment '主键ID',
+                                            `emp_id`                  VARCHAR(64)  DEFAULT NULL comment '工号',
+    `name`                    VARCHAR(64)  DEFAULT NULL comment '姓名',
+    `job`                     VARCHAR(128) DEFAULT NULL comment '岗位',
+    `entry_time`              DATE         DEFAULT NULL comment '入职时间',
+    `birthday`                DATE         DEFAULT NULL comment '生日',
+    `educational_background`  VARCHAR(32)  DEFAULT NULL comment '学历：junior、undergraduate、master、doctor',
+    `director_id`             BIGINT       DEFAULT NULL comment '主管ID',
+    `dept_id`                 BIGINT       DEFAULT NULL comment '部门ID',
+    `duty`                    VARCHAR(512) DEFAULT NULL comment '工作职责',
+    `motto`                   VARCHAR(256) DEFAULT NULL comment '个性签名',
+    `pic_url`                 VARCHAR(512) DEFAULT NULL comment '头像地址',
+    `status`                  VARCHAR(32)  DEFAULT 'ON_JOB' comment '状态：ON_JOB-在职、OFF_JOB-已离职',
+    `resignation_time`        DATE         DEFAULT NULL comment '离职时间',
+    `created_at`              DATETIME     DEFAULT CURRENT_TIMESTAMP comment '创建时间',
+    `updated_at`              DATETIME     DEFAULT CURRENT_TIMESTAMP ON update CURRENT_TIMESTAMP comment '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_emp_id` (`emp_id`),
+    KEY `idx_dept_id` (`dept_id`),
+    KEY `idx_director_id` (`director_id`),
+    KEY `idx_status` (`status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment='员工信息表';

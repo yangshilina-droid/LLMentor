@@ -14,9 +14,11 @@ import com.lake.knowenginelearn.document.event.DocumentChunkedEvent;
 import com.lake.knowenginelearn.document.event.DocumentConvertedEvent;
 import com.lake.knowenginelearn.document.mapper.KnowledgeSegmentMapper;
 import com.lake.knowenginelearn.document.service.*;
+import com.lake.knowenginelearn.document.util.DocumentPermissionUtils;
 import com.lake.knowenginelearn.document.util.FileTypeUtil;
 import com.lake.knowenginelearn.infra.lock.DistributeLock;
 import com.lake.knowenginelearn.rag.constant.MetadataKeyConstant;
+import com.lake.knowenginelearn.rag.constant.RoleEnum;
 import com.lake.knowenginelearn.rag.modules.splitter.DocumentSplitterFactory;
 import com.lake.knowenginelearn.rag.modules.splitter.ExcelSplitter;
 import dev.langchain4j.data.document.Document;
@@ -103,7 +105,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             document.setDescription(documentUploadParam.description());
             document.setKnowledgeBaseType(KnowledgeBaseType.valueOf(documentUploadParam.knowledgeBaseType()));
             document.setTableName(documentUploadParam.tableName());
-            // document.setAccessibleBy(DocumentPermissionUtils.getDocumentPermission(RoleEnum.valueOf(documentUploadParam.accessibleBy())));
+            document.setAccessibleBy(DocumentPermissionUtils.getDocumentPermission(RoleEnum.valueOf(documentUploadParam.accessibleBy())));
 
             // 保存到数据库
             boolean result = knowledgeDocumentService.save(document);

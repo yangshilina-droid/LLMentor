@@ -5,11 +5,14 @@ import com.lake.knowenginelearn.ai.service.KnowEngineChatAiService;
 import com.lake.knowenginelearn.ai.service.PromptService;
 import com.lake.knowenginelearn.business.service.CarInfoService;
 import com.lake.knowenginelearn.business.service.MyCarService;
+import com.lake.knowenginelearn.business.service.UserRoleService;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
 import com.lake.knowenginelearn.chat.memory.DatabaseChatMemoryStore;
 import com.lake.knowenginelearn.document.entity.TableMeta;
 import com.lake.knowenginelearn.document.service.KnowEngineTableMetaService;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
+import com.lake.knowenginelearn.document.util.DocumentPermissionUtils;
+import com.lake.knowenginelearn.rag.constant.RoleEnum;
 import com.lake.knowenginelearn.rag.modules.*;
 import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
@@ -29,6 +32,7 @@ import dev.langchain4j.rag.content.injector.DefaultContentInjector;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationFullText;
 import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchConfigurationKnn;
+import dev.langchain4j.store.embedding.filter.Filter;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.elasticsearch.client.RestClient;
@@ -51,6 +55,8 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static com.lake.knowenginelearn.rag.config.ElasticSearchConfiguration.INDEX_NAME;
+import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.ACCESSIBLE_BY;
+import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Service
@@ -118,7 +124,7 @@ public class ChatApplicationService {
         ragChatModel = OpenAiStreamingChatModel.builder()
                 .apiKey(chatModelApiKey)
                 .baseUrl(chatModelBaseUrl)
-                .modelName("qwen3.7-max")
+                .modelName("qwen3.6-plus")
                 .logRequests(true)
                 .logRequests(true)
                 .temperature(0.2)
@@ -189,6 +195,8 @@ public class ChatApplicationService {
                     // 构建查询改写器（带进度回调）
                     KnowEngineQueryTransformer queryTransformer = new KnowEngineQueryTransformer(chatModel, chatParam.messageId(), processCallback);
 
+                    Filter accessibleByFilter = buildFilter(chatParam);
+
                     ProgressAwareContentRetriever embeddingRetriever = new ProgressAwareContentRetriever(
                             KnowEngineElasticsearchContentRetriever.builder()
                             .configuration(ElasticsearchConfigurationKnn.builder().build())
@@ -198,6 +206,7 @@ public class ChatApplicationService {
                             .restClient(restClient)
                             .indexName(INDEX_NAME)
                             .knowledgeSegmentService(knowledgeSegmentService)
+                            .filter(accessibleByFilter)
                             .build(), processCallback);
 
                     ProgressAwareContentRetriever fullTextRetriever = new ProgressAwareContentRetriever(KnowEngineElasticsearchContentRetriever.builder()
@@ -206,6 +215,7 @@ public class ChatApplicationService {
                             .embeddingModel(openAiEmbeddingModel)
                             .knowledgeSegmentService(knowledgeSegmentService)
                             .indexName(INDEX_NAME)
+                            .filter(accessibleByFilter)
                             .maxResults(5)
                             .build(), processCallback);
 
@@ -321,5 +331,34 @@ public class ChatApplicationService {
             sb.append(dynamicSql);
         }
         return sb.toString();
+    }
+
+    @Autowired
+    private UserRoleService userRoleService;
+
+    /**
+     * 构造权限过滤器
+     *
+     * @param chatParam
+     * @return
+     */
+    private Filter buildFilter(ChatParam chatParam) {
+        // 默认权限过滤器：允许访客权限
+        Filter permissionFilter = metadataKey(ACCESSIBLE_BY).isEqualTo(RoleEnum.VISITOR.name());
+
+        // 根据用户角色获取权限
+        RoleEnum roleEnum = userRoleService.getUserRole(chatParam);
+
+        // 获取该文档支持的所有权限
+        String[] permissions = DocumentPermissionUtils.getDocumentAccessiblePermission(roleEnum);
+
+        for (String permission : permissions) {
+            // 非访客权限时，将权限用or连接，表示支持多种权限
+            if (!RoleEnum.VISITOR.name().equals(permission)) {
+                permissionFilter = permissionFilter.or(metadataKey(ACCESSIBLE_BY).isEqualTo(permission));
+            }
+        }
+
+        return permissionFilter;
     }
 }

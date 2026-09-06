@@ -1,6 +1,8 @@
 package com.lake.knowenginelearn.rag.modules;
 
+import co.elastic.clients.elasticsearch.core.SearchResponse;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -13,16 +15,21 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.elasticsearch.*;
 import dev.langchain4j.store.embedding.filter.Filter;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
+import dev.langchain4j.store.embedding.filter.logical.Or;
 import org.elasticsearch.client.RestClient;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.BROTHER_CHUNK_ID;
 import static com.lake.knowenginelearn.rag.constant.MetadataKeyConstant.PARENT_CHUNK_ID;
 import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
+import static java.util.stream.Collectors.toList;
 
 /**
  * KnowEngine Elasticsearch 内容检索器
@@ -30,7 +37,7 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
  * 基于 Elasticsearch 的向量检索实现，支持以下特性：
  * <ul>
  *   <li><b>向量检索 (KNN)</b>：使用 Embedding 模型将查询文本向量化，进行相似度搜索</li>
- *   <li><b>全文检索</b>：支持 Elasticsearch 全文搜索</li>
+ *   <li><b>全文检索</b>：支持 Elasticsearch 全文搜索，扩展了默认检索不支持的权限过滤功能</li>
  *   <li><b>混合检索</b>：结合向量检索和全文检索（需 Elasticsearch 相应许可证）</li>
  *   <li><b>关联内容扩展</b>：自动检索兄弟分段 (brother chunk) 和父分段 (parent chunk) 内容</li>
  * </ul>
@@ -83,6 +90,20 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
         this.initialize(configuration, restClient, indexName);
     }
 
+    private List<TextSegment> toTextList(SearchResponse<Document> response) {
+        return response.hits().hits().stream()
+                .map(hit -> Optional.ofNullable(hit.source())
+                        .map(document -> document.getText() == null
+                                ? null
+                                : TextSegment.from(
+                                document.getText(),
+                                new Metadata(document.getMetadata())
+                                        .put(ContentMetadata.SCORE.name(), hit.score())
+                                        .put(ContentMetadata.EMBEDDING_ID.name(), hit.id())))
+                        .orElse(null))
+                .collect(toList());
+    }
+
     /**
      * 根据查询条件检索相关内容
      * <p>
@@ -118,14 +139,7 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
         // 全文检索模式：直接执行全文搜索并返回结果
         if (configuration instanceof ElasticsearchConfigurationFullText) {
             log.debug("Using a full text search query");
-            searchContents = this.fullTextSearch(query.text()).stream()
-                    .map(t -> Content.from(
-                            t,
-                            Map.of(
-                                    ContentMetadata.SCORE, t.metadata().getDouble(ContentMetadata.SCORE.name()),
-                                    ContentMetadata.EMBEDDING_ID,
-                                    t.metadata().getString(ContentMetadata.EMBEDDING_ID.name()))))
-                    .toList();
+            searchContents = doFullTextQuery(query);
         } else if (configuration instanceof ElasticsearchConfigurationHybrid) {
             // 混合检索模式：结合向量检索和全文检索
             searchContents = mapResultsToContentList(this.hybridSearch(request, query.text()));
@@ -133,6 +147,14 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
             searchContents = mapResultsToContentList(this.search(request));
         }
 
+        List<Content> finalContents = proccessParentAndBrotherContent(searchContents);
+
+        return finalContents;
+    }
+
+    @NotNull
+    private List<Content> proccessParentAndBrotherContent(List<Content> searchContents) {
+        EmbeddingSearchRequest request;
         // 去重并按文本内容排序
         searchContents = searchContents.stream().distinct().sorted(Comparator.comparing(content -> content.textSegment().text())).toList();
         List<Content> finalContents = new ArrayList<>(searchContents);
@@ -200,6 +222,58 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
         return finalContents;
     }
 
+    /**
+     * 执行全文检索查询。默认的全文搜索不支持filter，所以需要定制
+     * <p>
+     * 根据权限过滤条件决定查询策略：
+     * <ul>
+     *   <li>无权限过滤（accessibleValues 为空）：使用简单的 match 查询，仅对 text 字段进行全文匹配</li>
+     *   <li>有权限过滤（accessibleValues 非空）：使用 bool 查询，
+     *       must 子句对 text 字段全文匹配，filter 子句通过 terms 查询限定 metadata.accessibleBy 字段，
+     *       确保只返回当前用户有权访问的文档</li>
+     * </ul>
+     * 查询结果转换为 Content 列表，携带 SCORE 和 EMBEDDING_ID 元数据。
+     *
+     * @param query 查询对象，包含检索文本
+     * @return 带元数据的 Content 列表
+     */
+    @NotNull
+    private List<Content> doFullTextQuery(Query query) {
+        try {
+            // 从 Filter 树中提取所有 IsEqualTo 的 value，用于权限过滤
+            List<String> accessibleValues = extractFilterValues(filter);
+
+            SearchResponse<Document> response = client.search(
+                    s -> s.index(indexName)
+                            .query(q -> accessibleValues.isEmpty()
+                                    // 无权限过滤：简单 match 查询
+                                    ? q.match(m -> m.field("text").query(query.text()))
+                                    // 有权限过滤：bool 查询 = must(全文匹配) + filter(权限过滤)
+                                    : q.bool(b -> b
+                                    .must(m -> m.match(mm -> mm.field("text").query(query.text())))
+                                    .filter(f -> f.terms(t -> t
+                                            .field("metadata.accessibleBy")
+                                            .terms(tv -> tv.value(accessibleValues.stream()
+                                                    .map(co.elastic.clients.elasticsearch._types.FieldValue::of)
+                                                    .toList())))))),
+                    Document.class);
+
+            // 将 ES 响应转换为 TextSegment 列表
+            List<TextSegment> results = toTextList(response);
+            // 将 TextSegment 转换为 Content，携带 SCORE 和 EMBEDDING_ID 元数据
+            return results.stream()
+                    .map(t -> Content.from(
+                            t,
+                            Map.of(
+                                    ContentMetadata.SCORE, t.metadata().getDouble(ContentMetadata.SCORE.name()),
+                                    ContentMetadata.EMBEDDING_ID,
+                                    t.metadata().getString(ContentMetadata.EMBEDDING_ID.name()))))
+                    .toList();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private List<Content> mapResultsToContentList(EmbeddingSearchResult<TextSegment> searchResult) {
         List<Content> result = searchResult.matches().stream()
                 .filter(f -> f.score() > minScore)
@@ -211,6 +285,32 @@ public class KnowEngineElasticsearchContentRetriever extends AbstractElasticsear
                 .toList();
         log.debug("Found [{}] relevant documents in Elasticsearch index [{}].", result.size(), indexName);
         return result;
+    }
+
+    /**
+     * 递归遍历 langchain4j Filter 树，提取所有 IsEqualTo 的 value 字符串列表。
+     * <p>
+     * 支持 Or(IsEqualTo, ...) 结构，适配权限过滤场景。
+     */
+    private List<String> extractFilterValues(Filter filter) {
+        List<String> values = new ArrayList<>();
+        collectFilterValues(filter, values);
+        return values;
+    }
+
+    private void collectFilterValues(Filter filter, List<String> values) {
+        if (filter == null) {
+            return;
+        }
+        if (filter instanceof IsEqualTo isEqualTo) {
+            Object value = isEqualTo.comparisonValue();
+            if (value != null) {
+                values.add(value.toString());
+            }
+        } else if (filter instanceof Or or) {
+            collectFilterValues(or.left(), values);
+            collectFilterValues(or.right(), values);
+        }
     }
 
     public static KnowEngineElasticsearchContentRetriever.Builder builder() {
