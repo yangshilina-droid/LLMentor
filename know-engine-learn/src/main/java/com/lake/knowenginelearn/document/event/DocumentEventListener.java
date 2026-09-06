@@ -1,14 +1,18 @@
 package com.lake.knowenginelearn.document.event;
 
+import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
+import com.lake.knowenginelearn.document.entity.KnowledgeDocumentVersion;
 import com.lake.knowenginelearn.document.service.DocumentProcessService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
+import com.lake.knowenginelearn.document.service.KnowledgeDocumentVersionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.util.Assert;
 
 /**
  * 文档事件监听器
@@ -24,30 +28,19 @@ public class DocumentEventListener {
     @Autowired
     private KnowledgeDocumentService knowledgeDocumentService;
 
-    /**
-     * 监听文档CONVERTED事件
-     * 触发文档分段流程
-     *
-     * @param event 文档已转换事件
-     */
-    // @Async("eventListenerExecutor")
-    // @EventListener
-    // public void onDocumentConverted(DocumentConvertedEvent event) {
-    //     Long documentId = event.getDocumentId();
-    //     log.info("收到文档CONVERTED事件，开始执行文档分段，documentId: {}", documentId);
-    //
-    //     try {
-    //         KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-    //         int segmentCount = documentProcessService.split(document);
-    //         log.info("文档分段完成，documentId: {}, segmentCount: {}", documentId, segmentCount);
-    //     } catch (Exception e) {
-    //         log.error("文档分段失败，documentId: {}", documentId, e);
-    //     }
-    // }
+    @Autowired
+    private KnowledgeDocumentVersionService knowledgeDocumentVersionService;
 
     /**
-     * 监听文档CHUNKED事件
-     * 触发向量嵌入流程
+     * 监听文档CHUNKED事件，触发向量嵌入流程
+     *
+     * <p>使用 {@code @TransactionalEventListener(phase = AFTER_COMMIT)} 确保监听器在
+     * 发布方事务提交后才执行。若改为 {@code @EventListener}，split() 的 @Transactional
+     * 事务尚未提交时监听器即被触发（@Async线程可见旧数据），导致
+     * embedAndStore() 读到的 status 仍为 CONVERTED 而非 CHUNKED，进而提前返回 false。</p>
+     *
+     * <p>注意：@Async + @TransactionalEventListener 组合时，若发布方事务回滚，
+     * 监听器不会被触发（AFTER_COMMIT 语义保证）。</p>
      *
      * @param event 文档已分段事件
      */
@@ -55,13 +48,24 @@ public class DocumentEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onDocumentChunked(DocumentChunkedEvent event) {
         Long documentId = event.getDocumentId();
-        log.info("收到文档CHUNKED事件，开始执行向量嵌入，documentId: {}, segmentCount: {}",
+        log.info("收到文档CHUNKED事件（事务已提交），开始执行向量嵌入，documentId: {}, segmentCount: {}",
                 documentId, event.getSegmentCount());
 
         try {
-            KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-            boolean success = documentProcessService.embedAndStore(document);
+            KnowledgeDocumentVersion documentVersion = knowledgeDocumentVersionService.getById(event.getDocumentVersionId());
+            boolean success = documentProcessService.embedAndStore(documentVersion);
+            Assert.isTrue(success, "向量嵌入失败: documentId=" + documentId);
             log.info("向量嵌入完成，documentId: {}, success: {}", documentId, success);
+
+            // 同步更新 KnowledgeDocument.status → VECTOR_STORED
+            KnowledgeDocument document = knowledgeDocumentService.getById(event.getDocumentId());
+            if (document != null && event.getDocumentVersionId().equals(document.getCurrentVersionId())) {
+                document.setStatus(DocumentStatus.VECTOR_STORED);
+                boolean docResult = knowledgeDocumentService.updateById(document);
+                Assert.isTrue(docResult, "文档状态更新失败: docId=" + documentId);
+                log.info("文档状态已同步为 VECTOR_STORED, docId={}", documentId);
+            }
+
         } catch (Exception e) {
             log.error("向量嵌入失败，documentId: {}", documentId, e);
         }

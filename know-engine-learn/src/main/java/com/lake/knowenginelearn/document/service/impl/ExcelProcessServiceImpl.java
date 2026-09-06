@@ -45,7 +45,7 @@ public class ExcelProcessServiceImpl implements FileProcessService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void processDocument(KnowledgeDocument document, InputStream inputStream) {
+    public String processDocument(KnowledgeDocument document, InputStream inputStream) {
         String documentTitle = document.getDocTitle();
         String originalTableName = document.getTableName();
         log.info("开始处理Excel文件: {}", documentTitle);
@@ -115,6 +115,7 @@ public class ExcelProcessServiceImpl implements FileProcessService {
                 }
             }
         }
+        return null;
     }
 
 

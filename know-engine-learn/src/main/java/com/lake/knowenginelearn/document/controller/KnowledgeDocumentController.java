@@ -1,21 +1,20 @@
 package com.lake.knowenginelearn.document.controller;
 
+
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
 import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
+import com.lake.knowenginelearn.document.entity.KnowledgeDocumentVersion;
 import com.lake.knowenginelearn.document.service.DocumentProcessService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
+import com.lake.knowenginelearn.document.service.KnowledgeDocumentVersionService;
+import com.lake.knowenginelearn.document.service.VectorStoreService;
 import com.lake.knowenginelearn.document.service.impl.PdfProcessServiceImpl;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
-import dev.langchain4j.store.embedding.EmbeddingSearchResult;
-import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchEmbeddingStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,6 +30,9 @@ public class KnowledgeDocumentController {
 
     @Autowired
     private KnowledgeDocumentService knowledgeDocumentService;
+
+    @Autowired
+    private KnowledgeDocumentVersionService knowledgeDocumentVersionService;
 
     @Autowired
     private DocumentProcessService documentProcessService;
@@ -59,6 +61,71 @@ public class KnowledgeDocumentController {
     }
 
     /**
+     * 上传文档新版本
+     *
+     * @param file        新版本文件
+     * @param docId       文档ID（knowledge_document.doc_id）
+     * @param version     新版本号（语义化版本，如 "2.0.0"，必须大于现有最新版本号）
+     * @param uploadUser  上传用户
+     * @param changelog   版本变更说明（可选）
+     * @return 更新后的文档记录
+     */
+    @PostMapping("/upload-version")
+    public KnowledgeDocument uploadVersion(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("docId") Long docId,
+            @RequestParam("version") String version,
+            @RequestParam("uploadUser") String uploadUser,
+            @RequestParam(value = "changelog", required = false) String changelog) throws IOException {
+        return documentProcessService.uploadNewVersion(docId, version, file, uploadUser, changelog);
+    }
+
+    /**
+     * 查询文档的所有版本（按版本号降序）
+     *
+     * @param docId 文档ID
+     * @return 版本列表
+     */
+    @GetMapping("/versions/{docId}")
+    public List<KnowledgeDocumentVersion> listVersions(@PathVariable Long docId) {
+        return knowledgeDocumentVersionService.listByDocId(docId);
+    }
+
+    /**
+     * 切换文档到指定版本
+     * 清理当前版本的分段和向量，恢复目标版本的文件URL和状态，状态置为 CONVERTED 等待重新切片
+     *
+     * @param docId     文档ID
+     * @param versionId 目标版本ID
+     * @return 更新后的文档记录
+     */
+    @PostMapping("/switch-version")
+    public KnowledgeDocument switchVersion(@RequestParam("docId") Long docId,
+            @RequestParam("versionId") Long versionId) {
+        return documentProcessService.switchVersion(docId, versionId);
+    }
+
+    /**
+     * 让指定版本失效：清理该版本 ES 向量，将分段状态降为 STORED，版本状态降为 CHUNKED
+     *
+     * @param versionId 版本ID（knowledge_document_version.version_id）
+     */
+    @PostMapping("/deactivate-version")
+    public void deactivateVersion(@RequestParam("versionId") Long versionId) {
+        knowledgeDocumentService.deactivateVersion(versionId);
+    }
+
+    /**
+     * 让指定版本生效（重新向量化）：对 STORED 分段重新 embed 写入 ES，版本状态升为 VECTOR_STORED
+     *
+     * @param versionId 版本ID（knowledge_document_version.version_id）
+     */
+    @PostMapping("/activate-version")
+    public void activateVersion(@RequestParam("versionId") Long versionId) {
+        knowledgeDocumentService.activateVersion(versionId);
+    }
+
+    /**
      * 对文档进行切分
      * 注意：此方法为手动触发切分接口，正常流程由事件驱动自动执行
      *
@@ -79,34 +146,114 @@ public class KnowledgeDocumentController {
     }
 
     /**
-     * 向量化并存储
-     * 注意：此方法为手动触发向量化接口，正常流程由事件驱动自动执行
+     * 分页查询（支持多条件筛选）
      *
-     * @param docId 文档ID
-     * @return 结果
-     */
-    @PostMapping("/embedding")
-    public String embedding(Long docId) {
-        KnowledgeDocument document = knowledgeDocumentService.getById(docId);
-        return documentProcessService.embedAndStore(document) ? "success" : "failed";
-    }
-
-    /**
-     * 分页查询
+     * @param current            当前页
+     * @param size               每页大小
+     * @param docTitle           文档标题（模糊查询，可选）
+     * @param status             文档状态，可选值：INIT, UPLOADED, CONVERTING, CONVERTED, CHUNKED, VECTOR_STORED, STORED
+     * @param knowledgeBaseType  知识库类型，可选值：DOCUMENT_SEARCH, DATA_QUERY
+     * @return 分页结果
      */
     @GetMapping("/page")
     public Page<KnowledgeDocument> page(
             @RequestParam(defaultValue = "1") Integer current,
-            @RequestParam(defaultValue = "10") Integer size) {
-        return knowledgeDocumentService.page(new Page<>(current, size));
+            @RequestParam(defaultValue = "10") Integer size,
+            @RequestParam(value = "docTitle", required = false) String docTitle,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "knowledgeBaseType", required = false) String knowledgeBaseType) {
+        Page<KnowledgeDocument> page = new Page<>(current, size);
+        QueryWrapper<KnowledgeDocument> wrapper = new QueryWrapper<>();
+        if (docTitle != null && !docTitle.isEmpty()) {
+            wrapper.like("doc_title", docTitle);
+        }
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq("status", status);
+        }
+        if (knowledgeBaseType != null && !knowledgeBaseType.isEmpty()) {
+            wrapper.eq("knowledge_base_type", knowledgeBaseType);
+        }
+        wrapper.orderByDesc("created_at");
+        return knowledgeDocumentService.page(page, wrapper);
     }
 
     /**
-     * 根据ID查询
+     * 条件查询列表（不分页）
+     *
+     * @param docTitle           文档标题（模糊查询，可选）
+     * @param status             文档状态（可选）
+     * @param knowledgeBaseType  知识库类型（可选）
+     * @return 文档列表
+     */
+    @GetMapping("/list")
+    public List<KnowledgeDocument> list(
+            @RequestParam(value = "docTitle", required = false) String docTitle,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "knowledgeBaseType", required = false) String knowledgeBaseType) {
+        QueryWrapper<KnowledgeDocument> wrapper = new QueryWrapper<>();
+        if (docTitle != null && !docTitle.isEmpty()) {
+            wrapper.like("doc_title", docTitle);
+        }
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq("status", status);
+        }
+        if (knowledgeBaseType != null && !knowledgeBaseType.isEmpty()) {
+            wrapper.eq("knowledge_base_type", knowledgeBaseType);
+        }
+        wrapper.orderByDesc("created_at");
+        return knowledgeDocumentService.list(wrapper);
+    }
+
+    /**
+     * 根据ID查询文档详情
      */
     @GetMapping("/{id:\\d+}")
     public KnowledgeDocument getById(@PathVariable Long id) {
         return knowledgeDocumentService.getById(id);
+    }
+
+    /**
+     * 新增文档记录
+     *
+     * @param document 文档实体
+     * @return 是否新增成功
+     */
+    @PostMapping
+    public boolean save(@RequestBody KnowledgeDocument document) {
+        return knowledgeDocumentService.save(document);
+    }
+
+    /**
+     * 根据ID更新文档（需携带 lockVersion 乐观锁版本号）
+     *
+     * @param document 文档实体
+     * @return 是否更新成功
+     */
+    @PutMapping
+    public boolean updateById(@RequestBody KnowledgeDocument document) {
+        return knowledgeDocumentService.updateById(document);
+    }
+
+    /**
+     * 根据ID删除文档（逻辑删除，并级联删除该文档下的所有分段及向量）
+     *
+     * @param id 文档ID
+     * @return 是否删除成功
+     */
+    @DeleteMapping("/{id}")
+    public boolean removeById(@PathVariable Long id) {
+        return knowledgeDocumentService.removeDocumentWithSegments(id);
+    }
+
+    /**
+     * 批量删除文档（逻辑删除，并级联删除分段及向量）
+     *
+     * @param ids 文档ID列表
+     * @return 是否删除成功
+     */
+    @DeleteMapping("/batch")
+    public boolean removeByIds(@RequestParam List<Long> ids) {
+        return knowledgeDocumentService.removeDocumentsWithSegments(ids);
     }
 
     /**
@@ -132,37 +279,27 @@ public class KnowledgeDocumentController {
     }
 
     @Autowired
-    private OpenAiEmbeddingModel openAiEmbeddingModel;
-
-    @Autowired
-    private ElasticsearchEmbeddingStore embeddingStore;
+    private VectorStoreService vectorStoreService;
 
     /**
      * 根据查询问题返回相关文档
-     *
+     * <p>
      * 主要用于测试
+     *
      * @param query
      * @return
      */
     @GetMapping("/askDocument")
     public String askDocument(String query) {
-        Embedding queryEmbedding = openAiEmbeddingModel.embed(query).content();
+        String result = vectorStoreService.search(query, 0.7);
+        return result != null ? result : "No relevant documents found.";
+    }
 
-        EmbeddingSearchResult<TextSegment> relevant = embeddingStore.search(
-                EmbeddingSearchRequest.builder()
-                        .queryEmbedding(queryEmbedding)
-                        .minScore(0.7)
-                        .build());
-
-        if (relevant.matches().size() > 0) {
-            EmbeddingMatch<TextSegment> embeddingMatch = relevant.matches().get(0);
-
-            System.out.println(embeddingMatch.score());
-            System.out.println(embeddingMatch.embedded().text());
-
-            return embeddingMatch.embedded().text();
-        } else {
-            return "No relevant documents found.";
-        }
+    /**
+     * 处理文档上传中的参数异常（如内容重复）
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
     }
 }

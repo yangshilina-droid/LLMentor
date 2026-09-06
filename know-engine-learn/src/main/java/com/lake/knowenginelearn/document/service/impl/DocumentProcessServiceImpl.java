@@ -1,21 +1,18 @@
 package com.lake.knowenginelearn.document.service.impl;
 
 import com.alibaba.fastjson2.JSON;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.common.base.Stopwatch;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.constant.FileType;
 import com.lake.knowenginelearn.document.constant.KnowledgeBaseType;
 import com.lake.knowenginelearn.document.constant.SegmentStatus;
-import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
-import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
-import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
-import com.lake.knowenginelearn.document.entity.KnowledgeSegment;
+import com.lake.knowenginelearn.document.entity.*;
 import com.lake.knowenginelearn.document.event.DocumentChunkedEvent;
 import com.lake.knowenginelearn.document.event.DocumentConvertedEvent;
+import com.lake.knowenginelearn.document.mapper.KnowledgeSegmentMapper;
 import com.lake.knowenginelearn.document.service.*;
 import com.lake.knowenginelearn.document.util.FileTypeUtil;
 import com.lake.knowenginelearn.infra.lock.DistributeLock;
@@ -25,11 +22,7 @@ import com.lake.knowenginelearn.rag.modules.splitter.ExcelSplitter;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
-import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
-import dev.langchain4j.model.output.Response;
-import dev.langchain4j.store.embedding.elasticsearch.ElasticsearchEmbeddingStore;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.tika.Tika;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,11 +36,16 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 文档处理服务实现类 负责文档的业务流程处理：上传、转换、分段、向量化
+ * 文档处理服务实现类
+ * 负责文档的业务流程处理：上传、转换、分段、向量化
  */
 @Slf4j
 @Service
@@ -55,6 +53,9 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
     @Autowired
     private KnowledgeDocumentService knowledgeDocumentService;
+
+    @Autowired
+    private KnowledgeDocumentVersionService knowledgeDocumentVersionService;
 
     @Autowired
     private FileStorageService fileStorageService;
@@ -66,13 +67,13 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     private KnowledgeSegmentService knowledgeSegmentService;
 
     @Autowired
-    private ElasticsearchEmbeddingStore elasticsearchEmbeddingStore;
-
-    @Autowired
-    private OpenAiEmbeddingModel openAiEmbeddingModel;
+    private KnowledgeSegmentMapper knowledgeSegmentMapper;
 
     @Autowired
     private ApplicationEventPublisher eventPublisher;
+
+    @Autowired
+    private DocumentCleanupService documentCleanupService;
 
     @Value("${minio.bucketName}")
     private String bucketName;
@@ -80,6 +81,14 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     @Override
     @DistributeLock(scene = "document-upload", keyExpression = "#documentUploadParam.uploadUser", waitTime = 0)
     public KnowledgeDocument upload(DocumentUploadParam documentUploadParam) throws IOException {
+        // 计算文件内容hash，用于去重
+        String contentHash = calculateContentHash(documentUploadParam.file());
+
+        // 检查是否已存在相同内容的版本（跨文档跨版本去重）
+        if (knowledgeDocumentVersionService.existsByContentHash(contentHash)) {
+            throw new IllegalArgumentException("文档内容已存在，请勿重复上传");
+        }
+
         try {
             log.info("start to upload ....");
             String fileName = documentUploadParam.file().getOriginalFilename();
@@ -89,39 +98,100 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             // 构建文档记录
             KnowledgeDocument document = new KnowledgeDocument();
             document.setDocTitle(documentUploadParam.title());
-            document.setUploadUser(documentUploadParam.uploadUser());
-            document.setDocUrl(fileUrl);
             document.setStatus(DocumentStatus.UPLOADED);
             document.setAccessibleBy(documentUploadParam.accessibleBy());
             document.setDescription(documentUploadParam.description());
             document.setKnowledgeBaseType(KnowledgeBaseType.valueOf(documentUploadParam.knowledgeBaseType()));
             document.setTableName(documentUploadParam.tableName());
+            // document.setAccessibleBy(DocumentPermissionUtils.getDocumentPermission(RoleEnum.valueOf(documentUploadParam.accessibleBy())));
 
             // 保存到数据库
             boolean result = knowledgeDocumentService.save(document);
             Assert.isTrue(result, "文件上传失败");
 
-            FileProcessService fileProcessService = fileProcessServiceFactory.get(FileTypeUtil.getFileType(fileName, documentUploadParam.file()), document.getKnowledgeBaseType());
+            // 处理文档（转换/存储），获取转换后的文档URL
+            String convertedDocUrl = null;
+            FileProcessService fileProcessService = fileProcessServiceFactory.get(
+                    FileTypeUtil.getFileType(fileName, documentUploadParam.file()), document.getKnowledgeBaseType());
             if (fileProcessService != null) {
-                fileProcessService.processDocument(document, documentUploadParam.file().getInputStream());
+                convertedDocUrl = fileProcessService.processDocument(document, documentUploadParam.file().getInputStream());
             } else {
-                if (document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH) {
-                    document.setStatus(DocumentStatus.CONVERTED);
-                    document.setConvertedDocUrl(fileUrl);
-                    result = knowledgeDocumentService.updateById(document);
-                    Assert.isTrue(result, "文件状态更新失败");
-                } else {
-                    // excel不用转换，直接将每行数据存储到数据库
-                    document.setStatus(DocumentStatus.STORED);
-                    document.setConvertedDocUrl(fileUrl);
-                    result = knowledgeDocumentService.updateById(document);
-                    Assert.isTrue(result, "文件状态更新失败");
-                }
+                document.setStatus(document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH
+                        ? DocumentStatus.CONVERTED : DocumentStatus.STORED);
+                result = knowledgeDocumentService.updateById(document);
+                Assert.isTrue(result, "文件状态更新失败");
+                convertedDocUrl = fileUrl;
             }
+
+            // 创建初始版本记录（含文件URL、转换后URL、上传用户、内容哈希）
+            KnowledgeDocumentVersion versionRecord = createVersionRecord(
+                    document.getDocId(), "1.0.0", fileUrl, convertedDocUrl,
+                    documentUploadParam.uploadUser(), contentHash, document.getStatus(), null);
+            document.setCurrentVersionId(versionRecord.getVersionId());
+            knowledgeDocumentService.updateById(document);
 
             return document;
         } catch (Exception e) {
             throw new IOException("文件上传失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    @DistributeLock(scene = "document-upload", keyExpression = "#uploadUser", waitTime = 0)
+    public KnowledgeDocument uploadNewVersion(Long docId, String version, MultipartFile file, String uploadUser, String changelog) throws IOException {
+        // 查询文档
+        KnowledgeDocument document = knowledgeDocumentService.getById(docId);
+        Assert.notNull(document, "文档不存在");
+
+        // 校验版本号必须大于已有最大版本号
+        String latestVersion = knowledgeDocumentVersionService.getLatestVersion(docId);
+        if (latestVersion != null && KnowledgeDocumentVersionServiceImpl.compareVersions(version, latestVersion) <= 0) {
+            throw new IllegalArgumentException("版本号 " + version + " 不大于现有最新版本号 " + latestVersion + "，请使用更大的版本号");
+        }
+
+        // 计算文件内容hash，用于去重
+        String contentHash = calculateContentHash(file);
+
+        // 检查是否已存在相同内容的版本（跨文档跨版本去重）
+        if (knowledgeDocumentVersionService.existsByContentHash(contentHash)) {
+            throw new IllegalArgumentException("文档内容已存在，请勿重复上传");
+        }
+
+        try {
+            log.info("start to upload version {} for doc {} ....", version, docId);
+
+            // 1. 上传新版本文件到MinIO（不清理旧版本数据，保证处理期间旧版本仍可查询）
+            String fileName = file.getOriginalFilename();
+            String fileUrl = fileStorageService.uploadFile(file, fileName);
+
+            // 2. 更新文档主表状态
+            document.setStatus(DocumentStatus.UPLOADED);
+            knowledgeDocumentService.updateById(document);
+
+            // 3. 处理文档（转换/存储），获取转换后的文档URL
+            String convertedDocUrl = null;
+            FileProcessService fileProcessService = fileProcessServiceFactory.get(
+                    FileTypeUtil.getFileType(fileName, file), document.getKnowledgeBaseType());
+            if (fileProcessService != null) {
+                convertedDocUrl = fileProcessService.processDocument(document, file.getInputStream());
+            } else {
+                document.setStatus(document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH
+                        ? DocumentStatus.CONVERTED : DocumentStatus.STORED);
+                knowledgeDocumentService.updateById(document);
+                convertedDocUrl = fileUrl;
+            }
+
+            // 4. 创建新版本记录（含文件URL、转换后URL、上传用户、内容哈希）
+            KnowledgeDocumentVersion versionRecord = createVersionRecord(
+                    document.getDocId(), version, fileUrl, convertedDocUrl,
+                    uploadUser, contentHash, document.getStatus(), changelog);
+            document.setCurrentVersionId(versionRecord.getVersionId());
+            knowledgeDocumentService.updateById(document);
+
+            log.info("文档 {} 新版本 {} 上传完成，旧版本数据保留中，待新版本向量化完成后自动清理", docId, version);
+            return document;
+        } catch (Exception e) {
+            throw new IOException("版本上传失败: " + e.getMessage(), e);
         }
     }
 
@@ -131,23 +201,27 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     public int split(KnowledgeDocument document, DocumentSplitParam documentSplitParam) {
         // 1. 查询文档
         Assert.notNull(document, "文档不存在");
-        Assert.notNull(document.getConvertedDocUrl(), "文档未转换完成");
+
+        // 从版本表获取当前版本的文件URL
+        KnowledgeDocumentVersion versionRecord = knowledgeDocumentVersionService.getById(document.getCurrentVersionId());
+        Assert.notNull(versionRecord, "文档版本不存在");
+        Assert.notNull(versionRecord.getConvertedDocUrl(), "文档未转换完成");
 
         if (document.getStatus() == DocumentStatus.CHUNKED) {
-            // 返回已切分的分段数量
-            Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>().eq("document_id", document.getDocId()).eq("skipEmbedding", 0));
+            // 返回已切分的分段数量（仅统计当前版本的分段，排除旧版本残留）
+            Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
+                    .eq("document_id", document.getDocId())
+                    .eq("document_version", document.getCurrentVersionId())
+                    .eq("skipEmbedding", 0));
             return chunkedCount.intValue();
         }
 
-        if (document.getStatus() != DocumentStatus.CONVERTED
-                && document.getStatus() != DocumentStatus.STORED) {
-            throw new IllegalStateException(
-                    "文档状态必须为CONVERTED或STORED，当前状态: " + document.getStatus() + "，无法完成切分"
-            );
+        if (document.getStatus() != DocumentStatus.CONVERTED) {
+            throw new RuntimeException("文档状态不为CONVERTED，无法完成切分");
         }
 
-        // 2. 从MinIO下载文件内容
-        String convertedDocUrl = document.getConvertedDocUrl();
+        // 2. 从MinIO下载文件内容（从版本表获取转换后的文档URL）
+        String convertedDocUrl = versionRecord.getConvertedDocUrl();
         String objectName = extractObjectNameFromUrl(convertedDocUrl);
         Assert.notNull(objectName, "无法解析文档URL");
 
@@ -155,7 +229,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         List<TextSegment> segments = new ArrayList<>();
         try (InputStream inputStream = fileStorageService.downloadFile(objectName)) {
             //EXCEL单独处理，因为他不是Document类型
-            if (FileType.EXCEL == FileTypeUtil.getFileType(document.getConvertedDocUrl()) || FileType.CSV == FileTypeUtil.getFileType(document.getConvertedDocUrl())) {
+            if (FileType.EXCEL == FileTypeUtil.getFileType(convertedDocUrl) || FileType.CSV == FileTypeUtil.getFileType(convertedDocUrl)) {
                 ExcelSplitter splitter = new ExcelSplitter(documentSplitParam.chunkSize(), false);
                 segments = splitter.split(inputStream.readAllBytes());
             } else {
@@ -169,19 +243,22 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
         // 4. 转换为 KnowledgeSegment 并保存
         for (int i = 0; i < segments.size(); i++) {
+
             TextSegment segment = segments.get(i);
             KnowledgeSegment knowledgeSegment = new KnowledgeSegment();
             knowledgeSegment.setText(segment.text());
             knowledgeSegment.setChunkId(segment.metadata().getString(MetadataKeyConstant.CHUNK_ID));
             Metadata metadata = segment.metadata();
-            // 后续参考来源使用
             metadata.put(MetadataKeyConstant.DOC_ID, document.getDocId());
             metadata.put(MetadataKeyConstant.FILE_NAME, document.getDocTitle());
-            metadata.put(MetadataKeyConstant.URL, document.getDocUrl());
+            metadata.put(MetadataKeyConstant.URL, versionRecord.getDocUrl());
+            if (document.getCurrentVersionId() != null) {
+                metadata.put(MetadataKeyConstant.VERSION, document.getCurrentVersionId());
+            }
 
-            //todo metadata统一处理(权限相关、多版本相关）
-            knowledgeSegment.setMetadata(JSON.toJSONString(metadata.toMap()));
+            knowledgeSegment.setMetadata(enrichMetadata(document, knowledgeSegment, metadata));
             knowledgeSegment.setDocumentId(document.getDocId());
+            knowledgeSegment.setDocumentVersion(document.getCurrentVersionId());
             knowledgeSegment.setChunkOrder(i);
 
             // 检查是否需要跳过嵌入
@@ -205,10 +282,15 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
         int segmentCount = knowledgeSegments.size();
 
-        // 6. 更新文档状态为 CHUNKED
+        // 6. 更新文档状态为 CHUNKED，并保存分段参数
         document.setStatus(DocumentStatus.CHUNKED);
+        document.setSplitParam(documentSplitParam);
         boolean updateResult = knowledgeDocumentService.updateById(document);
         Assert.isTrue(updateResult, "更新文档状态失败");
+
+        versionRecord.setStatus(DocumentStatus.CHUNKED);
+        updateResult = knowledgeDocumentVersionService.updateById(versionRecord);
+        Assert.isTrue(updateResult, "更新文档版本状态失败");
 
         // 发送文档已分段事件
         publishChunkedEvent(document, segmentCount);
@@ -216,70 +298,106 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         return segmentCount;
     }
 
+    /**
+     * 填充元数据
+     *
+     * @param document         文档信息
+     * @param knowledgeSegment 知识片段
+     * @param metadata         元数据
+     * @return
+     */
+    private static String enrichMetadata(KnowledgeDocument document, KnowledgeSegment knowledgeSegment, Metadata metadata) {
+        Map<String, Object> metadataMap = metadata.toMap();
+        metadataMap.put(MetadataKeyConstant.ACCESSIBLE_BY, document.getAccessibleBy());
+
+        return JSON.toJSONString(metadataMap);
+    }
+
     @Override
-    @DistributeLock(scene = "document-embed", keyExpression = "#document.docId", waitTime = 0)
-    public boolean embedAndStore(KnowledgeDocument document) {
-        if (document == null) {
+    @DistributeLock(scene = "document-embed", keyExpression = "#documentVersion.versionId", waitTime = 0)
+    public boolean embedAndStore(KnowledgeDocumentVersion documentVersion) {
+        if (documentVersion == null) {
             return false;
         }
 
-        if (document.getStatus() == DocumentStatus.VECTOR_STORED) {
+        if (documentVersion.getStatus() == DocumentStatus.VECTOR_STORED) {
+            log.info("文档版本状态已为VECTOR_STORED，无需重复向量化: {}", documentVersion.getVersionId());
             return true;
         }
 
-        if (document.getStatus() != DocumentStatus.CHUNKED) {
+        if (documentVersion.getStatus() != DocumentStatus.CHUNKED) {
+            log.warn("文档版本状态不是CHUNKED，无法完成向量化: {}", documentVersion.getStatus());
             return false;
         }
 
-        // 分页扫描全部document_id为docId且status为STORED的文档片段
-        LambdaQueryWrapper<KnowledgeSegment> queryWrapper = Wrappers.<KnowledgeSegment>lambdaQuery()
-                .eq(KnowledgeSegment::getDocumentId, document.getDocId())
-                .eq(KnowledgeSegment::getStatus, SegmentStatus.STORED)
-                .isNull(KnowledgeSegment::getEmbeddingId)
-                .eq(KnowledgeSegment::getSkipEmbedding, 0);
-
-        Page<KnowledgeSegment> page = knowledgeSegmentService.page(new Page<>(1, 100), queryWrapper);
-
-        while (page.hasNext()) {
-            List<KnowledgeSegment> textSegmentsToEmbed = page.getRecords();
-            List<TextSegment> textSegments = textSegmentsToEmbed.stream().map(segment -> TextSegment.from(segment.getText(), Metadata.from(segment.getMetadataMap()))).toList();
-            // 获取嵌入向量
-            Response<List<Embedding>> embeddingResponse = openAiEmbeddingModel.embedAll(textSegments);
-
-            // 存储嵌入向量
-            List<String> embeddingIds = elasticsearchEmbeddingStore.addAll(embeddingResponse.content(), textSegments);
-
-            //todo 事务处理
-
-            // 更新文档片段状态
-            for (int i = 0; i < textSegmentsToEmbed.size(); i++) {
-                String embeddingId = embeddingIds.get(i);
-                KnowledgeSegment knowledgeSegment = textSegmentsToEmbed.get(i);
-                knowledgeSegment.setEmbeddingId(embeddingId);
-                knowledgeSegment.setStatus(SegmentStatus.VECTOR_STORED);
-                knowledgeSegmentService.updateById(knowledgeSegment);
-            }
-
-            // 继续扫描下一页
-            page = knowledgeSegmentService.page(new Page<>(page.getCurrent(), 100), queryWrapper);
-        }
+        knowledgeDocumentService.activateVersion(documentVersion.getVersionId());
 
         //double check
-        long segmentCount = knowledgeSegmentService.count(queryWrapper);
+        long segmentCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
+                .eq("document_id", documentVersion.getDocId())
+                .eq("document_version", documentVersion.getVersionId())
+                .eq("status", SegmentStatus.STORED)
+                .eq("skip_embedding", 0));
+
         if (segmentCount == 0) {
-            // 更新文档状态
-            document.setStatus(DocumentStatus.VECTOR_STORED);
-            return knowledgeDocumentService.updateById(document);
+            // 针对非当前版本的文档，取消激活
+            List<KnowledgeDocumentVersion> documentVersions = knowledgeDocumentVersionService.list(new QueryWrapper<KnowledgeDocumentVersion>()
+                    .eq("doc_id", documentVersion.getDocId())
+                    .eq("status", DocumentStatus.VECTOR_STORED)
+                    .ne("version_id", documentVersion.getVersionId()));
+
+            documentVersions.forEach(version -> knowledgeDocumentService.deactivateVersion(version.getVersionId()));
+            return true;
         }
 
         log.warn("向量存储失败，存在部分分段没有存储成功，未成功的数量： " + segmentCount);
         return false;
     }
 
+    @Override
+    @DistributeLock(scene = "document-upload", keyExpression = "#docId", waitTime = 0)
+    @Transactional(rollbackFor = Exception.class)
+    public KnowledgeDocument switchVersion(Long docId, Long versionId) {
+        // 查询文档
+        KnowledgeDocument document = knowledgeDocumentService.getById(docId);
+        Assert.notNull(document, "文档不存在");
+
+        // 查询目标版本
+        KnowledgeDocumentVersion versionRecord = knowledgeDocumentVersionService.getById(versionId);
+        Assert.notNull(versionRecord, "版本不存在");
+        Assert.isTrue(versionRecord.getDocId().equals(docId), "版本不属于该文档");
+
+        // 如果已经是当前版本，无需切换
+        if (versionId.equals(document.getCurrentVersionId())) {
+            return document;
+        }
+
+        log.info("切换文档 {} 的版本：从 versionId={} 切换到 versionId={}", docId, document.getCurrentVersionId(), versionId);
+
+        // 更新原版本文档片段状态为 STORED
+        LambdaUpdateWrapper<KnowledgeSegment> updateWrapper = Wrappers.<KnowledgeSegment>lambdaUpdate()
+                .set(KnowledgeSegment::getStatus, SegmentStatus.STORED)
+                .eq(KnowledgeSegment::getDocumentId, document.getDocId())
+                .eq(KnowledgeSegment::getDocumentVersion, document.getCurrentVersionId());
+        int segAffected = knowledgeSegmentMapper.update(null, updateWrapper);
+        log.info("切换版本：旧版本分段状态降级完成, affected={}", segAffected);
+
+        boolean embedResult = embedAndStore(versionRecord);
+        Assert.isTrue(embedResult, "更新文档片段状态失败");
+
+        // 更新文档版本
+        document.setCurrentVersionId(versionId);
+        boolean docUpdateResult = knowledgeDocumentService.updateById(document);
+        Assert.isTrue(docUpdateResult, "更新文档版本失败");
+
+        return document;
+    }
+
     // ==================== 事件发布方法 ====================
 
     /**
      * 发送文档已转换事件
+     *
      * @Deprecated 不再使用事件驱动，靠用户在前端手动触发分段，因为需要用户选择分段方式。
      */
     @Deprecated
@@ -294,7 +412,8 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
      */
     private void publishChunkedEvent(KnowledgeDocument document, int segmentCount) {
         log.info("发送文档CHUNKED事件，documentId: {}, segmentCount: {}", document.getDocId(), segmentCount);
-        DocumentChunkedEvent event = new DocumentChunkedEvent(this, document.getDocId(), document, segmentCount);
+        DocumentChunkedEvent
+                event = new DocumentChunkedEvent(this, document.getDocId(), document.getCurrentVersionId(), segmentCount);
         eventPublisher.publishEvent(event);
     }
 
@@ -336,5 +455,56 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             return null;
         }
         return url.substring(lastSlashIndex + 1);
+    }
+
+    /**
+     * 创建版本记录
+     *
+     * @param docId           文档ID
+     * @param version         版本号（语义化版本，如 "1.0.0"）
+     * @param docUrl          原始文档URL（MinIO）
+     * @param convertedDocUrl 转换后的文档URL
+     * @param uploadUser      上传用户
+     * @param contentHash     内容哈希
+     * @param status          文档状态
+     * @param changelog       变更说明
+     * @return 保存后的版本记录
+     */
+    private KnowledgeDocumentVersion createVersionRecord(Long docId, String version, String docUrl,
+            String convertedDocUrl, String uploadUser,
+            String contentHash, DocumentStatus status, String changelog) {
+        KnowledgeDocumentVersion versionRecord = new KnowledgeDocumentVersion();
+        versionRecord.setDocId(docId);
+        versionRecord.setVersion(version);
+        versionRecord.setDocUrl(docUrl);
+        versionRecord.setConvertedDocUrl(convertedDocUrl);
+        versionRecord.setContentHash(contentHash);
+        versionRecord.setStatus(status);
+        versionRecord.setUploadUser(uploadUser);
+        versionRecord.setChangelog(changelog);
+        knowledgeDocumentVersionService.save(versionRecord);
+        log.info("创建版本记录成功, docId: {}, version: {}, versionId: {}",
+                docId, version, versionRecord.getVersionId());
+        return versionRecord;
+    }
+
+    /**
+     * 计算文件内容的SHA-256哈希值
+     *
+     * @param file 上传的文件
+     * @return SHA-256哈希的十六进制字符串
+     */
+    private String calculateContentHash(MultipartFile file) throws IOException {
+        try (InputStream is = file.getInputStream()) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = is.read(buffer)) != -1) {
+                digest.update(buffer, 0, bytesRead);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException("SHA-256算法不可用", e);
+        }
     }
 }

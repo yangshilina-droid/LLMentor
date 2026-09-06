@@ -11,15 +11,17 @@ import java.io.InputStream;
  */
 public interface FileProcessService {
     /**
-     * 处理文档转换 - Markdown 格式
-     * 1. 从 MinIO 下载文件
-     * 2. 调用文档解析接口获取md/zip
-     * 3. 转换后的文档保存在minio上
-     * 3. 更新文档状态和转换后的 URL
+     * 处理文档转换
+     * 1. 从输入流读取文件内容
+     * 2. 调用文档解析接口转换格式
+     * 3. 转换后的文档保存在MinIO上
+     * 4. 更新文档状态
      *
      * @param document 文档对象
+     * @param inputStream 文件输入流
+     * @return 转换后的文档URL（convertedDocUrl），如果不涉及转换则返回 null
      */
-    public void processDocument(KnowledgeDocument document, InputStream inputStream);
+    String processDocument(KnowledgeDocument document, InputStream inputStream);
 
     /**
      * 判断是否支持该文件

@@ -1,5 +1,6 @@
 package com.lake.knowenginelearn.document.service.impl;
 
+
 import com.alibaba.fastjson2.JSON;
 import com.lake.knowenginelearn.document.constant.ContentType;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
@@ -41,6 +42,8 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import static com.lake.knowenginelearn.document.constant.ContentType.ZIP;
+
 /**
  * 文件处理服务 - 负责文档转换处理
  */
@@ -73,8 +76,8 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
      *
      * @param document 文档对象
      */
-    public void processDocument(KnowledgeDocument document, InputStream inputStream) {
-        processDocumentToMarkdownFromZip(document, inputStream);
+    public String processDocument(KnowledgeDocument document, InputStream inputStream) {
+        return processDocumentToMarkdownFromZip(document, inputStream);
     }
 
     /**
@@ -82,7 +85,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
      *
      * @param document 文档对象
      */
-    public void processDocumentToMarkdown(KnowledgeDocument document, InputStream inputStream) {
+    public String processDocumentToMarkdown(KnowledgeDocument document, InputStream inputStream) {
         log.info("开始处理文档转换为 Markdown，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
@@ -104,10 +107,10 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
 
             // 更新文档状态为已转换
             document.setStatus(DocumentStatus.CONVERTED);
-            document.setConvertedDocUrl(convertedUrl);
             result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件CONVERTED状态更新失败");
             log.info("文档 Markdown 转换完成，documentId: {}", document.getDocTitle());
+            return convertedUrl;
         } catch (Exception e) {
             log.error("文档 Markdown 转换失败，documentId: {}", document.getDocTitle(), e);
             // 转换失败，状态回滚为 UPLOADED
@@ -129,7 +132,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
      *
      * @param document 文档对象
      */
-    public void processDocumentToZip(KnowledgeDocument document, InputStream inputStream) {
+    public String processDocumentToZip(KnowledgeDocument document, InputStream inputStream) {
         log.info("开始处理文档转换为 ZIP，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
@@ -146,15 +149,15 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
 
             // 保存转换后的 ZIP 到 MinIO
             String convertedObjectName = CONVERTED_FILE_DIR + document.getDocTitle().substring(0, document.getDocTitle().lastIndexOf(".")) + ".zip";
-            String convertedUrl = fileStorageService.uploadFile(convertedObjectName, zipBytes, ContentType.ZIP);
+            String convertedUrl = fileStorageService.uploadFile(convertedObjectName, zipBytes, ZIP);
 
             // 更新文档状态为已转换
             document.setStatus(DocumentStatus.CONVERTED);
-            document.setConvertedDocUrl(convertedUrl);
             result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件CONVERTED状态更新失败");
 
             log.info("文档 ZIP 转换完成，documentId: {}", document.getDocTitle());
+            return convertedUrl;
         } catch (Exception e) {
             log.error("文档 ZIP 转换失败，documentId: {}", document.getDocTitle(), e);
             // 转换失败，状态回滚为 UPLOADED
@@ -180,7 +183,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
      *
      * @param document 文档对象
      */
-    public void processDocumentToMarkdownFromZip(KnowledgeDocument document, InputStream inputStream) {
+    public String processDocumentToMarkdownFromZip(KnowledgeDocument document, InputStream inputStream) {
         log.info("开始处理文档转换为 ZIP，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
@@ -214,13 +217,13 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
             // 4. 上传解压后的 md 和图片到 MinIO，并处理 md 内容
             String mdMinioUrl = processExtractedFiles(document, extractDir);
 
-            // 5. 更新文档状态为已转换，保存 md 的 MinIO 地址
+            // 5. 更新文档状态为已转换
             document.setStatus(DocumentStatus.CONVERTED);
-            document.setConvertedDocUrl(mdMinioUrl);
             result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件CONVERTED状态更新失败");
 
             log.info("文档 ZIP 转换完成，documentId: {}, mdUrl: {}", document.getDocTitle(), mdMinioUrl);
+            return mdMinioUrl;
         } catch (Exception e) {
             log.error("文档 ZIP 转换失败，documentId: {}", document.getDocTitle(), e);
             // 转换失败，状态回滚为 UPLOADED

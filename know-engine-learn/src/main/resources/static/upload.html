@@ -239,6 +239,11 @@
 <div class="container">
     <h1>📚 知识文档上传</h1>
 
+    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:20px;">
+        <a href="/document.html" style="padding:8px 16px;background:#f0f4ff;color:#667eea;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;">📄 文档管理</a>
+        <a href="/chat.html" style="padding:8px 16px;background:#f0fff4;color:#28a745;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;">💬 AI 对话</a>
+    </div>
+
     <form id="uploadForm">
         <div class="form-group">
             <label>选择文件 *</label>
@@ -264,7 +269,7 @@
             <label for="knowledgeBaseType">知识库类型 *</label>
             <select id="knowledgeBaseType" name="knowledgeBaseType" required style="width:100%;padding:12px 16px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;transition:border-color 0.3s;background-color:white;cursor:pointer;">
                 <option value="">请选择知识库类型</option>
-                <option value="DOCUMENT_SEARCH">文档搜索 (DOCUMENT_SEARCH)</option>
+                <option value="DOCUMENT_SEARCH" selected>文档搜索 (DOCUMENT_SEARCH)</option>
                 <option value="DATA_QUERY">数据查询 (DATA_QUERY)</option>
             </select>
         </div>
@@ -281,8 +286,14 @@
         </div>
 
         <div class="form-group">
-            <label for="accessibleBy">可见范围</label>
-            <input type="text" id="accessibleBy" name="accessibleBy" placeholder="例如：team1,team2（可选）">
+            <label for="accessibleBy">可见范围 *</label>
+            <select id="accessibleBy" name="accessibleBy" required style="width:100%;padding:12px 16px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;transition:border-color 0.3s;background-color:white;cursor:pointer;">
+                <option value="">请选择可见范围</option>
+                <option value="VISITOR" selected>未购车用户 (VISITOR)</option>
+                <option value="OWNER">已购车用户 (OWNER)</option>
+                <option value="CUSTOMER_SERVICE">客服 (CUSTOMER_SERVICE)</option>
+            </select>
+            <div class="param-hint">权限由高到低：CUSTOMER_SERVICE > OWNER > VISITOR。设置CUSTOMER_SERVICE则仅客服可见；设置OWNER则客服和已购车用户可见；设置VISITOR则所有人可见。</div>
         </div>
 
         <button type="submit" class="upload-btn" id="uploadBtn">开始上传</button>
@@ -408,10 +419,24 @@
         }
     });
 
-    // 文件选择显示
+    // 文件选择显示，并自动提取文件名填充标题和描述
     fileInput.addEventListener('change', function() {
         if (this.files && this.files[0]) {
-            fileName.textContent = this.files[0].name;
+            const file = this.files[0];
+            const fullName = file.name;
+            fileName.textContent = fullName;
+            // 去掉扩展名作为标题和描述
+            const lastDotIdx = fullName.lastIndexOf('.');
+            const baseName = lastDotIdx > 0 ? fullName.substring(0, lastDotIdx) : fullName;
+            // 仅在用户尚未手动输入时自动填充
+            const titleInput = document.getElementById('title');
+            const descInput = document.getElementById('description');
+            if (!titleInput.value.trim()) {
+                titleInput.value = baseName;
+            }
+            if (!descInput.value.trim()) {
+                descInput.value = baseName;
+            }
         }
     });
 
@@ -434,7 +459,19 @@
 
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
             fileInput.files = e.dataTransfer.files;
-            fileName.textContent = e.dataTransfer.files[0].name;
+            const fullName = e.dataTransfer.files[0].name;
+            fileName.textContent = fullName;
+            // 去掉扩展名作为标题和描述
+            const lastDotIdx = fullName.lastIndexOf('.');
+            const baseName = lastDotIdx > 0 ? fullName.substring(0, lastDotIdx) : fullName;
+            const titleInput = document.getElementById('title');
+            const descInput = document.getElementById('description');
+            if (!titleInput.value.trim()) {
+                titleInput.value = baseName;
+            }
+            if (!descInput.value.trim()) {
+                descInput.value = baseName;
+            }
         }
     });
 
@@ -507,7 +544,7 @@
                     showResult('success', '上传成功！', `
                             <strong>文档ID：</strong>${response.docId}<br>
                             <strong>文档标题：</strong>${response.docTitle}<br>
-                            <strong>上传用户：</strong>${response.uploadUser}<br>
+                            <strong>版本ID：</strong>${response.currentVersionId ?? '-'}<br>
                             <strong>状态：</strong>${response.status}
                         `);
                     // 保存文档ID并显示切片表单
@@ -517,7 +554,12 @@
                     uploadForm.reset();
                     fileName.textContent = '';
                 } else {
-                    showResult('error', '上传失败', '服务器返回错误：' + xhr.status);
+                    let errorMsg = '服务器返回错误：' + xhr.status;
+                    try {
+                        const respText = xhr.responseText.trim();
+                        if (respText) errorMsg = respText;
+                    } catch (e) {}
+                    showResult('error', '上传失败', errorMsg);
                 }
             });
 
@@ -623,6 +665,8 @@
                     `);
                 // 隐藏切片表单
                 document.getElementById('splitForm').style.display = 'none';
+                // 延迟跳转到文档管理页
+                setTimeout(() => { window.location.href = '/document.html'; }, 1500);
             } else {
                 const errorText = await response.text();
                 showResult('error', '切片失败', errorText || '服务器返回错误：' + response.status);

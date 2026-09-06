@@ -47,7 +47,7 @@ public class MarkdownProcessServiceImpl extends MinerUProcessBaseServiceImpl {
     private KnowledgeDocumentService knowledgeDocumentService;
 
     @Override
-    public void processDocument(KnowledgeDocument document, InputStream inputStream) {
+    public String processDocument(KnowledgeDocument document, InputStream inputStream) {
         log.info("开始处理 Markdown 文档图片描述生成，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
@@ -73,11 +73,11 @@ public class MarkdownProcessServiceImpl extends MinerUProcessBaseServiceImpl {
 
             // 4. 更新文档状态为已转换
             document.setStatus(DocumentStatus.CONVERTED);
-            document.setConvertedDocUrl(convertedUrl);
             result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件CONVERTED状态更新失败");
 
             log.info("Markdown 文档处理完成，documentId: {}, convertedUrl: {}", document.getDocTitle(), convertedUrl);
+            return convertedUrl;
         } catch (Exception e) {
             log.error("Markdown 文档处理失败，documentId: {}", document.getDocTitle(), e);
             // 处理失败，状态回滚为 UPLOADED

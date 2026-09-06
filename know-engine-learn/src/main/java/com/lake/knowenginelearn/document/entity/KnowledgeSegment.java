@@ -6,21 +6,23 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lake.knowenginelearn.document.constant.SegmentStatus;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.Map;
 
 /**
- * 知识片段表
+ * 知识片段表实体类
  */
-@Data
+@Getter
+@Setter
 @TableName("knowledge_segment")
 public class KnowledgeSegment extends BaseEntity {
 
     /**
      * 片段ID
      */
-    @TableId(value = "id", type = IdType.AUTO)
+    @TableId(type = IdType.AUTO)
     private Long id;
 
     /**
@@ -44,6 +46,11 @@ public class KnowledgeSegment extends BaseEntity {
     private Long documentId;
 
     /**
+     * 所属文档版本ID（指向 knowledge_document_version.version_id）
+     */
+    private Long documentVersion;
+
+    /**
      * 顺序
      */
     private Integer chunkOrder;
@@ -54,7 +61,7 @@ public class KnowledgeSegment extends BaseEntity {
     private String embeddingId;
 
     /**
-     * 状态：STORED, VECTOR_STORED
+     * 状态：INIT, VECTOR_STORED
      */
     private SegmentStatus status;
 

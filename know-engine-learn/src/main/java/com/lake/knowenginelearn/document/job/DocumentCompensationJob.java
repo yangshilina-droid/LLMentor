@@ -3,15 +3,16 @@ package com.lake.knowenginelearn.document.job;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
+import com.lake.knowenginelearn.document.entity.KnowledgeDocumentVersion;
+import com.lake.knowenginelearn.document.service.DocumentCleanupService;
 import com.lake.knowenginelearn.document.service.DocumentProcessService;
 import com.lake.knowenginelearn.document.service.KnowledgeDocumentService;
-import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
+import com.lake.knowenginelearn.document.service.KnowledgeDocumentVersionService;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -26,7 +27,7 @@ public class DocumentCompensationJob {
     private KnowledgeDocumentService knowledgeDocumentService;
 
     @Autowired
-    private KnowledgeSegmentService knowledgeSegmentService;
+    private KnowledgeDocumentVersionService knowledgeDocumentVersionService;
 
     @Autowired
     private DocumentProcessService documentProcessService;
@@ -44,55 +45,54 @@ public class DocumentCompensationJob {
     /**
      * 文档分段补偿任务
      * 扫描 CONVERTED 状态超过阈值的文档，重新触发分段
+     * @Deprecated 不再需要，靠用户在前端手动触发分段，因为需要用户选择分段方式。
      */
-    // @XxlJob("documentSplitCompensation")
-    // public void documentSplitCompensation() {
-    //     log.info("========== 开始执行文档分段补偿任务 ==========");
-    //     int successCount = 0;
-    //     int failCount = 0;
+    //    @Deprecated
+    //    @XxlJob("documentSplitCompensation")
+    //    public void documentSplitCompensation() {
+    //        log.info("========== 开始执行文档分段补偿任务 ==========");
+    //        int successCount = 0;
+    //        int failCount = 0;
     //
-    //     try {
-    //         // 查询 CONVERTED 状态的文档
-    //         // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
-    //         // 这里简化处理，查询所有 CONVERTED 状态的文档
-    //         LambdaQueryWrapper<KnowledgeDocument> queryWrapper = new LambdaQueryWrapper<>();
-    //         queryWrapper.eq(KnowledgeDocument::getStatus, DocumentStatus.CONVERTED);
-    //         queryWrapper.isNotNull(KnowledgeDocument::getConvertedDocUrl);
+    //        try {
+    //            // 这里简化处理，查询所有 CONVERTED 状态的文档
+    //            LambdaQueryWrapper<KnowledgeDocument> queryWrapper = new LambdaQueryWrapper<>();
+    //            queryWrapper.eq(KnowledgeDocument::getStatus, DocumentStatus.CONVERTED);
+    //            queryWrapper.isNotNull(KnowledgeDocument::getConvertedDocUrl);
     //
-    //         List<KnowledgeDocument> documents = knowledgeDocumentService.list(queryWrapper);
-    //         log.info("发现 {} 个待补偿的 CONVERTED 状态文档", documents.size());
+    //            List<KnowledgeDocument> documents = knowledgeDocumentService.list(queryWrapper);
+    //            log.info("发现 {} 个待补偿的 CONVERTED 状态文档", documents.size());
     //
-    //         for (KnowledgeDocument document : documents) {
-    //             try {
-    //                 // 检查重试次数（从 extension 字段解析，或使用默认值）
-    //                 // todo 注：实际项目中应该在实体和数据库中添加 updateTime 和 retryCount 字段
-    //                 int retryCount = getRetryCount(document);
-    //                 if (retryCount >= MAX_RETRY_COUNT) {
-    //                     log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
-    //                     continue;
-    //                 }
+    //            for (KnowledgeDocument document : documents) {
+    //                try {
+    //                    // 检查重试次数（从 extension 字段解析，或使用默认值）
+    //                    int retryCount = getRetryCount(document);
+    //                    if (retryCount >= MAX_RETRY_COUNT) {
+    //                        log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
+    //                        continue;
+    //                    }
     //
-    //                 log.info("补偿处理文档分段，documentId: {}, retryCount: {}", document.getDocId(), retryCount);
+    //                    log.info("补偿处理文档分段，documentId: {}, retryCount: {}", document.getDocId(), retryCount);
     //
-    //                 // 执行分段
-    //                 int segmentCount = documentProcessService.split(document);
+    //                    // 执行分段
+    //                    int segmentCount = documentProcessService.split(document);
     //
-    //                 // 更新重试次数
-    //                 updateRetryCount(document.getDocId(), retryCount + 1);
+    //                    // 更新重试次数
+    //                    updateRetryCount(document.getDocId(), retryCount + 1);
     //
-    //                 log.info("文档分段补偿成功，documentId: {}, segmentCount: {}", document.getDocId(), segmentCount);
-    //                 successCount++;
-    //             } catch (Exception e) {
-    //                 log.error("文档分段补偿失败，documentId: {}", document.getDocId(), e);
-    //                 failCount++;
-    //             }
-    //         }
-    //     } catch (Exception e) {
-    //         log.error("文档分段补偿任务执行异常", e);
-    //     }
+    //                    log.info("文档分段补偿成功，documentId: {}, segmentCount: {}", document.getDocId(), segmentCount);
+    //                    successCount++;
+    //                } catch (Exception e) {
+    //                    log.error("文档分段补偿失败，documentId: {}", document.getDocId(), e);
+    //                    failCount++;
+    //                }
+    //            }
+    //        } catch (Exception e) {
+    //            log.error("文档分段补偿任务执行异常", e);
+    //        }
     //
-    //     log.info("========== 文档分段补偿任务完成，成功: {}，失败: {} ==========", successCount, failCount);
-    // }
+    //        log.info("========== 文档分段补偿任务完成，成功: {}，失败: {} ==========", successCount, failCount);
+    //    }
 
     /**
      * 向量化补偿任务
@@ -106,36 +106,33 @@ public class DocumentCompensationJob {
 
         try {
             // 查询 CHUNKED 状态的文档
-            //todo 扫表注意索引问题
-            LambdaQueryWrapper<KnowledgeDocument> docQueryWrapper = new LambdaQueryWrapper<>();
-            docQueryWrapper.eq(KnowledgeDocument::getStatus, DocumentStatus.CHUNKED);
+            LambdaQueryWrapper<KnowledgeDocumentVersion> docQueryWrapper = new LambdaQueryWrapper<>();
+            docQueryWrapper.eq(KnowledgeDocumentVersion::getStatus, DocumentStatus.CHUNKED);
 
-            List<KnowledgeDocument> documents = knowledgeDocumentService.list(docQueryWrapper);
+            List<KnowledgeDocumentVersion> documents = knowledgeDocumentVersionService.list(docQueryWrapper);
             log.info("发现 {} 个 CHUNKED 状态的文档", documents.size());
 
-            for (KnowledgeDocument document : documents) {
-                try {
-                    // 检查重试次数
-                    int retryCount = getRetryCount(document);
-                    if (retryCount >= MAX_RETRY_COUNT) {
-                        log.warn("文档 {} 已达最大重试次数 {}，跳过补偿", document.getDocId(), retryCount);
-                        continue;
-                    }
+            for (KnowledgeDocumentVersion documentVersion : documents) {
+                KnowledgeDocument document = knowledgeDocumentService.getById(documentVersion.getDocId());
+                if (!document.getCurrentVersionId().equals(documentVersion.getVersionId())) {
+                    log.warn("文档 {} 当前版本 {} 不匹配，跳过补偿", documentVersion.getDocId(), documentVersion.getVersion());
+                    continue;
+                }
 
+                try {
                     // 执行向量化
-                    boolean success = documentProcessService.embedAndStore(document);
+                    boolean success = documentProcessService.embedAndStore(documentVersion);
 
                     if (success) {
                         // 更新重试次数
-                        updateRetryCount(document.getDocId(), retryCount + 1);
-                        log.info("向量化补偿成功，documentId: {}", document.getDocId());
+                        log.info("向量化补偿成功，documentId: {} , version: {}", documentVersion.getDocId(), documentVersion.getVersion());
                         successCount++;
                     } else {
-                        log.warn("向量化补偿失败，documentId: {}", document.getDocId());
+                        log.warn("向量化补偿失败，documentId: {} , version: {}", documentVersion.getDocId(), documentVersion.getVersion());
                         failCount++;
                     }
                 } catch (Exception e) {
-                    log.error("向量化补偿失败，documentId: {}", document.getDocId(), e);
+                    log.error("向量化补偿失败，documentId: {} , version: {}", documentVersion.getDocId(), documentVersion.getVersion(), e);
                     failCount++;
                 }
             }
@@ -146,47 +143,28 @@ public class DocumentCompensationJob {
         log.info("========== 向量化补偿任务完成，成功: {}，失败: {} ==========", successCount, failCount);
     }
 
+
+    @Autowired
+    private DocumentCleanupService documentCleanupService;
+
     /**
-     * 从 extension 字段获取重试次数
+     * 扫描所有状态为 VECTOR_STORED 的文档，检查是否存在旧版本残留分段，
      */
-    private int getRetryCount(KnowledgeDocument document) {
-        String extension = document.getExtension();
-        if (extension == null || extension.isEmpty()) {
-            return 0;
-        }
+    @XxlJob("retryFailedCleanups")
+    public void retryFailedCleanups() {
         try {
-            com.alibaba.fastjson2.JSONObject json = com.alibaba.fastjson2.JSON.parseObject(extension);
-            return json.getIntValue("retryCount");
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    /**
-     * 更新重试次数到 extension 字段
-     */
-    private void updateRetryCount(Long documentId, int retryCount) {
-        KnowledgeDocument document = knowledgeDocumentService.getById(documentId);
-        if (document == null) {
-            return;
-        }
-
-        com.alibaba.fastjson2.JSONObject json;
-        String extension = document.getExtension();
-        if (extension == null || extension.isEmpty()) {
-            json = new com.alibaba.fastjson2.JSONObject();
-        } else {
-            try {
-                json = com.alibaba.fastjson2.JSON.parseObject(extension);
-            } catch (Exception e) {
-                json = new com.alibaba.fastjson2.JSONObject();
+            List<KnowledgeDocument> docsToCleanup = knowledgeDocumentService.scanDocumentsNeedingCleanup();
+            if (docsToCleanup.isEmpty()) {
+                return;
             }
+
+            log.info("定时任务发现 {} 个文档需要清理旧版本数据", docsToCleanup.size());
+
+            for (KnowledgeDocument docInfo : docsToCleanup) {
+                documentCleanupService.cleanupOldVersionData(docInfo.getDocId(), docInfo.getCurrentVersionId());
+            }
+        } catch (Exception e) {
+            log.error("定时清理任务执行异常: {}", e.getMessage(), e);
         }
-
-        json.put("retryCount", retryCount);
-        json.put("lastRetryTime", LocalDateTime.now().toString());
-
-        document.setExtension(json.toJSONString());
-        knowledgeDocumentService.updateById(document);
     }
 }

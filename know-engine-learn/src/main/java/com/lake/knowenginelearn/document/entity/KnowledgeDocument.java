@@ -7,7 +7,8 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.constant.KnowledgeBaseType;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.io.Serializable;
 import java.util.HashMap;
@@ -16,7 +17,8 @@ import java.util.Map;
 /**
  * 知识文档表实体类
  */
-@Data
+@Getter
+@Setter
 @TableName("knowledge_document")
 public class KnowledgeDocument extends BaseEntity {
 
@@ -30,21 +32,6 @@ public class KnowledgeDocument extends BaseEntity {
      * 文档标题
      */
     private String docTitle;
-
-    /**
-     * 上传用户
-     */
-    private String uploadUser;
-
-    /**
-     * 文档URL
-     */
-    private String docUrl;
-
-    /**
-     * 转换后的文档URL
-     */
-    private String convertedDocUrl;
 
     /**
      * 状态：INIT, UPLOADED, CONVERTING, CONVERTED, CHUNKED, VECTOR_STORED
@@ -71,6 +58,11 @@ public class KnowledgeDocument extends BaseEntity {
      */
     private String extension;
 
+    /**
+     * 当前激活版本ID，指向 knowledge_document_version.version_id
+     */
+    private Long currentVersionId;
+
     @JsonIgnore
     public Boolean isOverride() {
         if (extension != null && !extension.isEmpty()) {
@@ -96,6 +88,51 @@ public class KnowledgeDocument extends BaseEntity {
             extensionMap = JSON.parseObject(extension, Map.class);
         }
         extensionMap.put("tableName", tableName);
+        this.extension = JSON.toJSONString(extensionMap);
+    }
+
+    /**
+     * 获取上次分段时使用的参数（从 extension JSON 中读取）
+     */
+    @JsonIgnore
+    public DocumentSplitParam getSplitParam() {
+        if (extension != null && !extension.isEmpty()) {
+            Map<String, Object> map = JSON.parseObject(extension, Map.class);
+            Object sp = map.get("splitParam");
+            if (sp != null) {
+                Map<String, Object> spMap = (Map<String, Object>) sp;
+                return new DocumentSplitParam(
+                        (String) spMap.get("splitType"),
+                        spMap.get("chunkSize") != null ? ((Number) spMap.get("chunkSize")).intValue() : null,
+                        spMap.get("overlap") != null ? ((Number) spMap.get("overlap")).intValue() : null,
+                        spMap.get("titleLevel") != null ? ((Number) spMap.get("titleLevel")).intValue() : null,
+                        (String) spMap.get("separator"),
+                        (String) spMap.get("regex")
+                );
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 保存分段参数到 extension JSON 中
+     */
+    @JsonIgnore
+    public void setSplitParam(DocumentSplitParam param) {
+        Map<String, Serializable> extensionMap;
+        if (extension == null) {
+            extensionMap = new HashMap<String, Serializable>();
+        } else {
+            extensionMap = JSON.parseObject(extension, Map.class);
+        }
+        Map<String, Serializable> spMap = new HashMap<>();
+        spMap.put("splitType", param.splitType());
+        spMap.put("chunkSize", param.chunkSize());
+        spMap.put("overlap", param.overlap());
+        spMap.put("titleLevel", param.titleLevel());
+        spMap.put("separator", param.separator());
+        spMap.put("regex", param.regex());
+        extensionMap.put("splitParam", (Serializable) spMap);
         this.extension = JSON.toJSONString(extensionMap);
     }
 }
