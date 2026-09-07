@@ -3,6 +3,7 @@ package com.lake.knowenginelearn.chat.controller;
 import com.lake.knowenginelearn.ai.service.CommonChatService;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
 import com.lake.knowenginelearn.ai.service.TitleSummaryService;
+import com.lake.knowenginelearn.auth.service.AuthService;
 import com.lake.knowenginelearn.chat.entity.ChatConversation;
 import com.lake.knowenginelearn.chat.entity.ChatMessage;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
@@ -61,30 +62,35 @@ public class ChatController {
     @Autowired
     private DatabaseChatMemoryStore databaseChatMemoryStore;
 
+    @Autowired
+    private AuthService authService;
+
     @PostConstruct
     public void init() {
         intentRecognitionService = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel)
                 .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder().id(memoryId).maxMessages(10).chatMemoryStore(databaseChatMemoryStore).build()).build();
     }
 
+
     /**
      * 流式对话接口
      * <p>
-     * 入参：userId、content（用户问题）、conversationId（可选）
+     * 入参：content（用户问题）、conversationId（可选）
      * 返回：SSE 流，每个 token 逐字推送；流结束前推送一条 [DONE] 事件携带 conversationId
      * <p>
      * 进度通知格式：{@code [PROGRESS]:xxx...}，用于在前端展示当前处理阶段，减少等待焦虑。
      * 推送环节包括：意图识别、问题改写、问题路由、排序筛选、生成回答等。
+     * <p>
+     * userId 从 sa-token session 中获取，无需前端传递。
      *
-     * @param userId         用户ID
      * @param content        用户问题
      * @param conversationId 会话ID（可选，不传则自动创建新会话）
      */
     @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> send(
-            @RequestParam String userId,
             @RequestParam String content,
             @RequestParam(required = false) String conversationId) {
+        String userId = authService.getCurrentUserId();
 
         // 1. 处理会话：没有 conversationId 则创建新会话
         final String finalConversationId;
@@ -161,12 +167,13 @@ public class ChatController {
 
 
     /**
-     * 查询指定用户的对话列表，按更新时间倒序排序
-     *
-     * @param userId 用户ID
+     * 查询当前登录用户的对话列表，按更新时间倒序排序
+     * <p>
+     * userId 从 sa-token session 中获取。
      */
     @GetMapping("/list")
-    public List<ChatConversation> listConversations(@RequestParam String userId) {
+    public List<ChatConversation> listConversations() {
+        String userId = authService.getCurrentUserId();
         return chatConversationService.getConversationsByUserId(userId);
     }
 

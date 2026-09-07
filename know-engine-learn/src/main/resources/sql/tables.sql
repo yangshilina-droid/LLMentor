@@ -237,11 +237,13 @@ create TABLE IF NOT EXISTS `car_order` (
     KEY `idx_order_type` (`order_type`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment='车辆订单表';
 
+
 -- 员工信息表
 create TABLE IF NOT EXISTS `staff_info` (
                                             `id`                      BIGINT       NOT NULL AUTO_INCREMENT comment '主键ID',
                                             `emp_id`                  VARCHAR(64)  DEFAULT NULL comment '工号',
     `name`                    VARCHAR(64)  DEFAULT NULL comment '姓名',
+    `password`                VARCHAR(128) DEFAULT NULL comment '登录密码',
     `job`                     VARCHAR(128) DEFAULT NULL comment '岗位',
     `entry_time`              DATE         DEFAULT NULL comment '入职时间',
     `birthday`                DATE         DEFAULT NULL comment '生日',
@@ -261,3 +263,26 @@ create TABLE IF NOT EXISTS `staff_info` (
     KEY `idx_director_id` (`director_id`),
     KEY `idx_status` (`status`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment='员工信息表';
+
+-- ============================================================
+-- 客户信息表（网页端客户登录使用）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `user_info` (
+                                           `id`           BIGINT       NOT NULL AUTO_INCREMENT comment '主键ID',
+                                           `phone`        VARCHAR(20)  NOT NULL comment '手机号（登录账号）',
+    `password`     VARCHAR(128) NOT NULL comment '登录密码',
+    `name`         VARCHAR(64)  DEFAULT NULL comment '姓名',
+    `nickname`     VARCHAR(128) DEFAULT NULL comment '昵称',
+    `avatar`       VARCHAR(512) DEFAULT NULL comment '头像地址',
+    `status`       VARCHAR(32)  DEFAULT 'ACTIVE' comment '状态：ACTIVE-正常、FROZEN-冻结',
+    `created_at`   DATETIME     DEFAULT CURRENT_TIMESTAMP comment '创建时间',
+    `updated_at`   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP comment '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_phone` (`phone`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment='客户信息表';
+
+-- 初始化一个测试客户账号（手机号: 13800138000，密码: 123456）
+INSERT INTO `user_info` (`phone`, `password`, `name`, `nickname`) VALUES ('13800138000', '123456', '测试客户', '小测') ON DUPLICATE KEY UPDATE `password` = '123456';
+
+-- 已有库执行 ALTER TABLE 添加 password 列（新建库无需执行）
+ALTER TABLE `staff_info` ADD COLUMN `password` VARCHAR(128) DEFAULT NULL comment '登录密码' AFTER `name`;

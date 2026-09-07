@@ -377,6 +377,19 @@
 </div>
 
 <script>
+    // 员工登录态校验：未登录则跳转到员工登录页
+    (async function checkStaffLogin() {
+        try {
+            const resp = await fetch('/auth/isLogin');
+            const data = await resp.json();
+            if (data.code !== 200 || data.data !== true) {
+                window.location.href = '/staff-login.html';
+            }
+        } catch (e) {
+            window.location.href = '/staff-login.html';
+        }
+    })();
+
     const fileInput = document.getElementById('file');
     const fileName = document.getElementById('fileName');
     const fileWrapper = document.getElementById('fileWrapper');

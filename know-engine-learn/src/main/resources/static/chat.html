@@ -617,14 +617,11 @@
     <div class="sidebar">
         <div class="sidebar-header">
             <h2>AI 对话助手</h2>
-            <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <a href="/upload.html" style="flex:1;text-align:center;padding:6px 12px;background:#f0f4ff;color:#667eea;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">📤 上传文档</a>
-                <a href="/document.html" style="flex:1;text-align:center;padding:6px 12px;background:#fff0f0;color:#dc3545;border-radius:6px;text-decoration:none;font-size:13px;font-weight:500;">📄 文档管理</a>
+            <div class="user-bar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;">
+                <span id="userName" style="font-size:14px;color:#333;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">加载中...</span>
+                <button id="logoutBtn" style="padding:6px 12px;background:#fff0f0;color:#dc3545;border:1px solid #ffcccc;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap;">退出</button>
             </div>
-            <div class="user-input-group">
-                <input type="text" id="userIdInput" placeholder="输入用户ID" value="user_001">
-                <button class="new-chat-btn" id="newChatBtn">新对话</button>
-            </div>
+            <button class="new-chat-btn" id="newChatBtn" style="width:100%;">新对话</button>
         </div>
         <div class="conversation-list" id="conversationList">
             <div class="no-conversations">暂无对话记录</div>
@@ -656,7 +653,6 @@
 
 <script>
     // 状态管理
-    let currentUserId = 'user_001';
     let currentConversationId = null;
     let isStreaming = false;
     let eventSource = null;
@@ -698,7 +694,6 @@
     }
 
     // DOM 元素
-    const userIdInput = document.getElementById('userIdInput');
     const newChatBtn = document.getElementById('newChatBtn');
     const conversationList = document.getElementById('conversationList');
     const messagesContainer = document.getElementById('messagesContainer');
@@ -710,21 +705,55 @@
     const welcomeMessage = document.getElementById('welcomeMessage');
 
     // 初始化
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+        // 登录态校验：未登录则跳转到登录页
+        try {
+            const resp = await fetch('/auth/isLogin');
+            const data = await resp.json();
+            if (data.code !== 200 || data.data !== true) {
+                window.location.href = '/login.html';
+                return;
+            }
+        } catch (e) {
+            window.location.href = '/login.html';
+            return;
+        }
+        // 加载当前登录用户信息
+        await loadUserInfo();
         loadConversations();
         setupEventListeners();
     });
 
+    // 加载当前登录用户信息
+    async function loadUserInfo() {
+        try {
+            const resp = await fetch('/auth/userInfo');
+            const data = await resp.json();
+            if (data.code === 200 && data.data) {
+                const nameEl = document.getElementById('userName');
+                if (nameEl) {
+                    nameEl.textContent = data.data.nickname || data.data.name || data.data.phone || '已登录';
+                }
+            } else if (data.code === 401) {
+                window.location.href = '/login.html';
+            }
+        } catch (e) {
+            console.error('加载用户信息失败:', e);
+        }
+    }
+
+    // 退出登录
+    async function logout() {
+        try {
+            await fetch('/auth/logout', { method: 'POST' });
+        } catch (e) {
+            // 忽略
+        }
+        window.location.href = '/login.html';
+    }
+
     // 设置事件监听
     function setupEventListeners() {
-        // 用户ID变化
-        userIdInput.addEventListener('change', () => {
-            currentUserId = userIdInput.value.trim() || 'user_001';
-            currentConversationId = null;
-            loadConversations();
-            resetChat();
-        });
-
         // 新对话按钮
         newChatBtn.addEventListener('click', () => {
             currentConversationId = null;
@@ -747,15 +776,23 @@
             messageInput.style.height = 'auto';
             messageInput.style.height = Math.min(messageInput.scrollHeight, 150) + 'px';
         });
+
+        // 退出登录
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', logout);
+        }
     }
 
     // 加载会话列表
     async function loadConversations() {
         try {
-            const response = await fetch(`/chat/list?userId=${encodeURIComponent(currentUserId)}`);
+            const response = await fetch('/chat/list');
             if (response.ok) {
                 const conversations = await response.json();
                 renderConversationList(conversations);
+            } else if (response.status === 401) {
+                window.location.href = '/login.html';
             }
         } catch (error) {
             console.error('加载会话列表失败:', error);
@@ -876,7 +913,6 @@
         try {
             // 构建URL
             const params = new URLSearchParams();
-            params.append('userId', currentUserId);
             params.append('content', content);
             if (currentConversationId) {
                 params.append('conversationId', currentConversationId);
@@ -893,6 +929,10 @@
                 method: 'POST'
             });
 
+            if (response.status === 401) {
+                window.location.href = '/login.html';
+                return;
+            }
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }

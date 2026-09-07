@@ -1,5 +1,6 @@
 package com.lake.knowenginelearn.chat.controller;
 
+import com.lake.knowenginelearn.auth.service.AuthService;
 import com.lake.knowenginelearn.chat.entity.ChatConversation;
 import com.lake.knowenginelearn.chat.service.ChatConversationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,14 +20,19 @@ public class ChatConversationController {
     @Autowired
     private ChatConversationService chatConversationService;
 
+    @Autowired
+    private AuthService authService;
+
     /**
-     * 获取用户的会话列表
+     * 获取当前登录用户的会话列表
+     * <p>
+     * userId 从 sa-token session 中获取。
      *
-     * @param userId 用户ID
      * @return 会话列表
      */
     @GetMapping("/list")
-    public Map<String, Object> getConversationList(@RequestParam String userId) {
+    public Map<String, Object> getConversationList() {
+        String userId = authService.getCurrentUserId();
         List<ChatConversation> conversations = chatConversationService.getConversationsByUserId(userId);
 
         Map<String, Object> result = new HashMap<>();
@@ -59,14 +65,15 @@ public class ChatConversationController {
 
     /**
      * 创建新会话
+     * <p>
+     * userId 从 sa-token session 中获取。
      *
-     * @param userId 用户ID
      * @param title  会话标题（可选）
      * @return 会话ID
      */
     @PostMapping("/create")
-    public Map<String, Object> createConversation(@RequestParam String userId,
-            @RequestParam(required = false) String title) {
+    public Map<String, Object> createConversation(@RequestParam(required = false) String title) {
+        String userId = authService.getCurrentUserId();
         String conversationId = chatConversationService.createConversation(userId, title);
 
         Map<String, Object> result = new HashMap<>();

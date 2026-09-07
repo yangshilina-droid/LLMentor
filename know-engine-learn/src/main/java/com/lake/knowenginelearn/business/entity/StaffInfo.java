@@ -32,6 +32,11 @@ public class StaffInfo {
     private String name;
 
     /**
+     * 登录密码
+     */
+    private String password;
+
+    /**
      * 岗位
      */
     private String job;

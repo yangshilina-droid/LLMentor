@@ -1,5 +1,6 @@
 package com.lake.knowenginelearn.business.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.lake.knowenginelearn.business.entity.StaffInfo;
 import com.lake.knowenginelearn.business.mapper.StaffInfoMapper;
@@ -11,4 +12,9 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class StaffInfoServiceImpl extends ServiceImpl<StaffInfoMapper, StaffInfo> implements StaffInfoService {
+
+    @Override
+    public StaffInfo getByEmpId(String empId) {
+        return this.getOne(new LambdaQueryWrapper<StaffInfo>().eq(StaffInfo::getEmpId, empId));
+    }
 }
