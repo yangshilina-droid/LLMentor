@@ -1,11 +1,11 @@
 package com.lake.knowenginelearn.chat.service;
 
 import com.lake.knowenginelearn.ai.constant.KnowEngineIntent;
-import com.lake.knowenginelearn.ai.service.KnowEngineChatAiService;
-import com.lake.knowenginelearn.ai.service.PromptService;
+import com.lake.knowenginelearn.ai.service.*;
 import com.lake.knowenginelearn.business.service.CarInfoService;
 import com.lake.knowenginelearn.business.service.MyCarService;
 import com.lake.knowenginelearn.business.service.UserRoleService;
+import com.lake.knowenginelearn.chat.constant.ChatSource;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
 import com.lake.knowenginelearn.chat.memory.DatabaseChatMemoryStore;
 import com.lake.knowenginelearn.document.entity.TableMeta;
@@ -21,6 +21,7 @@ import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.input.PromptTemplate;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.scoring.onnx.OnnxScoringModel;
@@ -44,6 +45,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import javax.sql.DataSource;
@@ -70,6 +72,17 @@ public class ChatApplicationService {
     private StreamingChatModel streamingChatModel;
 
     @Autowired
+    private CommonChatService commonChatService;
+
+    private IntentRecognitionService intentRecognitionService;
+
+    @Autowired
+    private ChatConversationService chatConversationService;
+
+    @Autowired
+    private ChatMessageService chatMessageService;
+
+    @Autowired
     private KnowledgeSegmentService knowledgeSegmentService;
 
     @Autowired
@@ -89,9 +102,6 @@ public class ChatApplicationService {
 
     @Autowired
     private OpenAiEmbeddingModel openAiEmbeddingModel;
-
-    @Autowired
-    private ChatMessageService chatMessageService;
 
     @Autowired
     private MyCarService myCarService;
@@ -131,17 +141,96 @@ public class ChatApplicationService {
                 .topP(0.9)
                 .customParameters(Map.of("enable_thinking", false))
                 .build();
+
+        intentRecognitionService = AiServices.builder(IntentRecognitionService.class).chatModel(chatModel)
+                .chatMemoryProvider(memoryId -> MessageWindowChatMemory.builder().id(memoryId).maxMessages(10).chatMemoryStore(databaseChatMemoryStore).build()).build();
     }
 
     /**
-     * 流式对话
+     * 统一流式对话入口。
+     * <p>
+     * 封装原本散落在 controller.ChatController 中的完整对话流程：
+     * 会话创建（可选）、异步标题生成、保存用户/助手消息、意图识别、不相关问题兜底通用对话、
+     * 相关问题 RAG 对话。HTTP 接口与钉钉机器人回调均通过此方法复用同一条对话链路。
+     *
+     * @param userId         用户ID
+     * @param content        用户问题
+     * @param conversationId 会话ID（可选，为空则自动创建新会话）
+     * @return 包含进度消息、[DONE] 事件及 LLM token 的 SSE 流
+     */
+    public Flux<String> chat(String userId, String content, String conversationId, ChatSource chatSource) {
+        // 1. 处理会话：没有 conversationId 则创建新会话
+        final String finalConversationId;
+        if (conversationId == null || conversationId.isBlank()) {
+            String tempTitle = content.substring(0, Math.min(content.length(), 20));
+            finalConversationId = chatConversationService.createConversation(userId, tempTitle);
+            log.info("创建新会话: conversationId={}, tempTitle={}", finalConversationId, tempTitle);
+
+            // 异步：用虚拟线程调用 LLM 生成摘要标题，完成后回写到数据库
+            Thread.ofVirtual().name("title-summary-" + finalConversationId).start(() -> {
+                try {
+                    OpenAiChatModel titleChatModel = OpenAiChatModel.builder()
+                            .apiKey(chatModelApiKey)
+                            .modelName("qwen3.5-flash")
+                            .temperature(0.7)
+                            .baseUrl(chatModelBaseUrl)
+                            .customParameters(Map.of("enable_thinking", false))
+                            .build();
+                    TitleSummaryService titleSummaryService = AiServices.builder(TitleSummaryService.class)
+                            .chatModel(titleChatModel)
+                            .build();
+                    String aiTitle = titleSummaryService.generateTitle(content);
+                    chatConversationService.updateTitle(finalConversationId, aiTitle);
+                    log.info("异步标题更新完成: conversationId={}, title={}", finalConversationId, aiTitle);
+                } catch (Exception e) {
+                    log.warn("异步标题生成失败, 保留临时标题: conversationId={}", finalConversationId, e);
+                }
+            });
+        } else {
+            finalConversationId = conversationId;
+        }
+
+        // 2. 保存用户消息
+        String messageId = chatMessageService.saveUserMessage(finalConversationId, content);
+        String assistantMessageId = chatMessageService.saveAssistantMessage(finalConversationId);
+
+        // 3. 流式返回：先发送意图识别进度，再执行意图识别
+        return Flux.just("[PROGRESS]:正在识别您的意图...")
+                .concatWith(
+                        Mono.fromCallable(() -> intentRecognitionService.chat(finalConversationId, content))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .flatMapMany(intentRecognitionResult -> {
+                                    // 意图识别完成后清除缓存，避免意图识别的AI响应污染后续RAG对话的历史记忆
+                                    databaseChatMemoryStore.evictCache(finalConversationId);
+
+                                    // 4. 如果用户问题不相关，使用一个通用的LLM做对话
+                                    if (!intentRecognitionResult.related()) {
+                                        StringBuilder contentBuilder = new StringBuilder();
+                                        return Flux.concat(
+                                                Flux.just("[PROGRESS]:正在为您生成回答..."),
+                                                commonChatService.streamChat(userId, content)
+                                                        .doOnNext(token -> contentBuilder.append(token))
+                                                        .doOnComplete(() -> chatMessageService.updateContent(assistantMessageId, contentBuilder.toString()))
+                                        );
+                                    }
+
+                                    // 5. 相关问题，走RAG流程（进度由内部组件发出）
+                                    return ragChat(new ChatParam(userId, finalConversationId, messageId, content, assistantMessageId, intentRecognitionResult, chatSource));
+                                })
+                )
+                .doOnError(e -> log.error("流式对话异常: conversationId={}", finalConversationId, e))
+                .concatWith(Mono.just("[DONE]:" + finalConversationId));
+    }
+
+    /**
+     * RAG 流式对话
      * <p>
      * 1. 根据意图识别结果，判断是否需要车辆信息
      * 2. 如果车辆信息不完善，则返回车辆信息不完善提示
      * 3. 根据意图识别结果，判断是否需要车辆信息
      * </p>
      */
-    public Flux<String> chat(ChatParam chatParam) {
+    public Flux<String> ragChat(ChatParam chatParam) {
         KnowEngineIntent intent = KnowEngineIntent.getIntent(chatParam.intentRecognitionResult());
 
         // 如果是维保服务、技术支持，则需要车辆信息

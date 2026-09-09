@@ -152,3 +152,8 @@ sa-token:
   is-read-cookie: true
   # 是否从 header 中读取 token
   is-read-header: true
+
+dingtalk:
+  appKey: dingogy7bfi5daw7erl4
+  appSecret: U1WHYGhNmB7tklosOk6YMPXLQW-dP-At-ZQirMKp4R4KaSkPdlGbUWKwR3Hwd11x
+  robotCode: dingogy7bfi5daw7erl4

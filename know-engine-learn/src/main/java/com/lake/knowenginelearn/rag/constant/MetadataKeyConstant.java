@@ -15,6 +15,8 @@ public class MetadataKeyConstant {
 
     public static final String CHUNK_ID = "chunkId";
 
+    public static final String EMBEDDING_ID = "EMBEDDING_ID";
+
     /**
      * 父块ID
      */

@@ -110,6 +110,10 @@ public class KnowEngineReRankingContentAggregator implements ContentAggregator {
             }).toList();
         }).toList();
 
+        if(knowEngineDefaultContents.isEmpty()){
+            return emptyList();
+        }
+
         // Fuse all contents retrieved using all queries
         List<Content> fusedContents = KnowEngineReciprocalRankFuser.fuse(knowEngineDefaultContents);
 

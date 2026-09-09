@@ -2,6 +2,7 @@ package com.lake.knowenginelearn.rag.controller;
 
 import com.lake.knowenginelearn.ai.model.IntentRecognitionResult;
 import com.lake.knowenginelearn.ai.service.IntentRecognitionService;
+import com.lake.knowenginelearn.chat.constant.ChatSource;
 import com.lake.knowenginelearn.chat.entity.ChatMessage;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
 import com.lake.knowenginelearn.chat.service.ChatApplicationService;
@@ -87,7 +88,7 @@ public class DatasetController {
 
         IntentRecognitionResult intentRecognitionResult = intentRecognitionService.chat(conversationId, question);
         // 2. 构造请求：仅依赖用户问题，其他业务字段置空
-        ChatParam chatParam = new ChatParam(DATASET_USER_ID, conversationId, messageId, question, assistantMessageId, intentRecognitionResult);
+        ChatParam chatParam = new ChatParam(DATASET_USER_ID, conversationId, messageId, question, assistantMessageId, intentRecognitionResult, ChatSource.STAFF_DING);
 
         // 3. 调用流式对话，分别收集回答 token 和参考资料
         StringBuilder answerBuilder = new StringBuilder();

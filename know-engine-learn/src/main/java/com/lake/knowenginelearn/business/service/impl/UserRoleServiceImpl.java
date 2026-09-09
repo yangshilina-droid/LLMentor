@@ -6,6 +6,7 @@ import com.lake.knowenginelearn.business.entity.StaffInfo;
 import com.lake.knowenginelearn.business.service.MyCarService;
 import com.lake.knowenginelearn.business.service.StaffInfoService;
 import com.lake.knowenginelearn.business.service.UserRoleService;
+import com.lake.knowenginelearn.chat.constant.ChatSource;
 import com.lake.knowenginelearn.chat.entity.ChatParam;
 import com.lake.knowenginelearn.rag.constant.RoleEnum;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,10 @@ public class UserRoleServiceImpl implements UserRoleService {
 
     @Override
     public RoleEnum getUserRole(ChatParam chatParam) {
+        if (chatParam.chatSource() == ChatSource.STAFF_DING) {
+            return RoleEnum.CUSTOMER_SERVICE;
+        }
+
         //再次查询一下车辆，避免水平权限漏洞
         MyCar myCar = myCarService.getCarByUser(chatParam.intentRecognitionResult().entities().car_id(), chatParam.userId());
         if (myCar != null) {

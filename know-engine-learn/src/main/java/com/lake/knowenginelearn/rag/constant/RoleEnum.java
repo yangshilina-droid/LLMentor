@@ -1,7 +1,5 @@
 package com.lake.knowenginelearn.rag.constant;
 
-import com.lake.knowenginelearn.chat.constant.ChatSource;
-
 /**
  * 角色
  *
@@ -24,15 +22,4 @@ public enum RoleEnum {
      */
     CUSTOMER_SERVICE;
 
-    public static RoleEnum getRoleEnum(ChatSource chatSource, Boolean hasOrder) {
-        if (chatSource == ChatSource.STAFF_DING) {
-            return CUSTOMER_SERVICE;
-        }
-
-        if (hasOrder) {
-            return OWNER;
-        }
-
-        return VISITOR;
-    }
 }
