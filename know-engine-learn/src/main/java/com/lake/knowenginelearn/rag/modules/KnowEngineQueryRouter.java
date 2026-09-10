@@ -152,9 +152,10 @@ public class KnowEngineQueryRouter implements QueryRouter {
                     return contentRetrievers.stream().filter(retriever ->
                     {
                         if (retriever instanceof ProgressAwareContentRetriever) {
-                            return ((ProgressAwareContentRetriever) retriever).getDelegate() instanceof Neo4jText2CypherRetriever;
+                            ContentRetriever delegate = ((ProgressAwareContentRetriever) retriever).getDelegate();
+                            return delegate instanceof Neo4jText2CypherRetriever || delegate instanceof KnowEngineNeo4jContentRetriever;
                         }
-                        return retriever instanceof Neo4jText2CypherRetriever;
+                        return retriever instanceof Neo4jText2CypherRetriever || retriever instanceof KnowEngineNeo4jContentRetriever;
 
                     }).collect(Collectors.toList());
                 case "knowledge_base":

@@ -63,6 +63,12 @@ public class ProgressAwareContentRetriever implements ContentRetriever {
                         System.out.println("[PROGRESS]:正在检索图数据库内容...");
                     }
                 }
+                case KnowEngineNeo4jContentRetriever knowEngineNeo4jContentRetriever -> {
+                    if (neo4jProgressSent.compareAndSet(false, true)) {
+                        progressCallback.accept("[PROGRESS]:正在检索图数据库内容...");
+                        System.out.println("[PROGRESS]:正在检索图数据库内容...");
+                    }
+                }
                 case AbstractElasticsearchEmbeddingStore abstractElasticsearchEmbeddingStore -> {
                     if (embeddingProgressSent.compareAndSet(false, true)) {
                         progressCallback.accept("[PROGRESS]:正在检索知识库内容...");

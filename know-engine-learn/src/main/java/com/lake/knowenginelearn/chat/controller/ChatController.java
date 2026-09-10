@@ -51,9 +51,9 @@ public class ChatController {
      */
     @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> send(
-            @RequestParam String userId,
             @RequestParam String content,
             @RequestParam(required = false) String conversationId) {
+        String userId = authService.getCurrentUserId();
         return chatApplicationService.chat(userId, content, conversationId, ChatSource.USER_WEB);
     }
 

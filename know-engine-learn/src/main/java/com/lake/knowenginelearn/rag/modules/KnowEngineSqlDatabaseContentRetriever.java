@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 自定义 SQL 数据库内容检索器
@@ -57,7 +58,10 @@ public class KnowEngineSqlDatabaseContentRetriever implements ContentRetriever {
             return fallbackRetriever.retrieve(query);
         }
 
-        return results;
+        // SQL 结构化查询结果直接透传，不参与后续重排序/融合
+        return results.stream()
+                .map(ContentUtil::markAsSkipRerank)
+                .collect(Collectors.toList());
     }
 
     /**

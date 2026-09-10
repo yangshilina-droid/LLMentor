@@ -121,6 +121,9 @@ public class ChatApplicationService {
     @Value("classpath:prompts/text-to-sql-prompt.txt")
     private Resource textToSqlPrompt;
 
+    @Value("classpath:prompts/text-to-cypher-prompt.txt")
+    private Resource textToCypherPrompt;
+
     @Value("classpath:sql/retrieve_tables.sql")
     private Resource tablesSql;
 
@@ -324,24 +327,34 @@ public class ChatApplicationService {
                         log.warn("Error creating SQL retriever", e);
                     }
 
-                    ProgressAwareContentRetriever neo4jRetriever = new ProgressAwareContentRetriever(
-                            Neo4jText2CypherRetriever.builder()
-                                    .graph(Neo4jGraph.builder()
-                                            .driver(neo4jDriver)
-                                            .build())
-                                    .chatModel(chatModel)
-                                    .build(), processCallback);
+                    ProgressAwareContentRetriever neo4jRetriever = null;
+                    try {
+                        neo4jRetriever = new ProgressAwareContentRetriever(
+                                KnowEngineNeo4jContentRetriever.builder()
+                                        .graph(Neo4jGraph.builder()
+                                                .driver(neo4jDriver)
+                                                .build())
+                                        .chatModel(chatModel)
+                                        .promptTemplate(new PromptTemplate(textToCypherPrompt.getContentAsString(UTF_8)))
+                                        .fallbackRetriever(embeddingRetriever)
+                                        .build(), processCallback);
+                    } catch (IOException e) {
+                        log.warn("Error creating Neo4j retriever", e);
+                    }
 
                     OnnxScoringModel scoringModel = BgeScoringModel.getInstance();
 
                     // 使用带进度通知的聚合器包装原始聚合器
+                    // 混合聚合器：SQL/Cypher 结构化结果直接透传，仅对向量/全文检索结果做 RRF 融合和重排序
                     ContentAggregator contentAggregator = new ProgressAwareContentAggregator(
-                            KnowEngineReRankingContentAggregator.builder()
-                                    .scoringModel(scoringModel)
-                                    .minScore(0.6)
-                                    .maxResults(5)
-                                    .querySelector(queryToContents -> queryToContents.keySet().iterator().next())
-                                    .build(),
+                            new KnowEngineHybridContentAggregator(
+                                    KnowEngineReRankingContentAggregator.builder()
+                                            .scoringModel(scoringModel)
+                                            .minScore(0.6)
+                                            .maxResults(5)
+                                            .querySelector(queryToContents -> queryToContents.keySet().iterator().next())
+                                            .build()
+                            ),
                             processCallback, chatParam.assistantMessageId(), chatMessageService
                     );
 

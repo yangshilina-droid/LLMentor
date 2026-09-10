@@ -8,11 +8,11 @@ import com.lake.knowenginelearn.ai.service.PromptService;
 import com.lake.knowenginelearn.chat.service.ChatMessageService;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
 import com.lake.knowenginelearn.rag.modules.KnowEngineElasticsearchContentRetriever;
+import com.lake.knowenginelearn.rag.modules.KnowEngineNeo4jContentRetriever;
 import com.lake.knowenginelearn.rag.modules.KnowEngineQueryRouter;
 import com.lake.knowenginelearn.rag.modules.KnowEngineQueryTransformer;
 import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
-import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.experimental.rag.content.retriever.sql.SqlDatabaseContentRetriever;
@@ -42,6 +42,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.elasticsearch.client.RestClient;
 import org.neo4j.driver.Driver;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -56,6 +58,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static com.lake.knowenginelearn.rag.config.ElasticSearchConfiguration.INDEX_NAME;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * 用于ai的各个模块的功能测试
@@ -96,12 +99,14 @@ public class RagModuleController {
 
     private SqlDatabaseContentRetriever sqlRetriever;
 
-    private Neo4jText2CypherRetriever neo4jRetriever;
+    private KnowEngineNeo4jContentRetriever neo4jRetriever;
 
     private static final int MAX_RESULT = 5;
 
     private static final double MIN_SCORE = 0.5;
 
+    @Value("classpath:prompts/text-to-cypher-prompt.txt")
+    private Resource textToCypherPrompt;
 
     @PostConstruct
     public void init() throws IOException {
@@ -120,11 +125,13 @@ public class RagModuleController {
                 .chatModel(chatModel)
                 .build();
 
-        this.neo4jRetriever = Neo4jText2CypherRetriever.builder()
+        this.neo4jRetriever = KnowEngineNeo4jContentRetriever.builder()
                 .graph(Neo4jGraph.builder()
                         .driver(neo4jDriver)
                         .build())
                 .chatModel(chatModel)
+                .promptTemplate(new PromptTemplate(textToCypherPrompt.getContentAsString(UTF_8)))
+                .fallbackRetriever(fullTextRetriever)
                 .build();
     }
 

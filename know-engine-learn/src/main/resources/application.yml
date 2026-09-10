@@ -77,9 +77,9 @@ langchain4j:
   open-ai:
     chat-model:
       api-key: @dashscope.api.key@
-      model-name: qwen3.7-plus
+      model-name:
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-      log-requests: true
+      log-requests: truqwen3.7-pluse
       log-responses: true
     streaming-chat-model:
       api-key: @dashscope.api.key@
