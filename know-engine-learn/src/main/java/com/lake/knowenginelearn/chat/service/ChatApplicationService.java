@@ -16,7 +16,6 @@ import com.lake.knowenginelearn.rag.constant.RoleEnum;
 import com.lake.knowenginelearn.rag.modules.*;
 import com.lake.knowenginelearn.rag.modules.reranker.BgeScoringModel;
 import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jGraph;
-import dev.langchain4j.community.rag.content.retriever.neo4j.Neo4jText2CypherRetriever;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
@@ -118,6 +117,9 @@ public class ChatApplicationService {
     @Value("${langchain4j.open-ai.chat-model.base-url}")
     private String chatModelBaseUrl;
 
+    @Value("${langchain4j.open-ai.chat-model.model-name}")
+    private String chatModelName;
+
     @Value("classpath:prompts/text-to-sql-prompt.txt")
     private Resource textToSqlPrompt;
 
@@ -128,7 +130,7 @@ public class ChatApplicationService {
     private Resource tablesSql;
 
     /**
-     * RAG 对话生成专用 ChatModel，使用更强的模型和较低温度以提升回答质量
+     * RAG 对话生成专用 ChatModel，使用配置的模型和较低温度以提升回答质量
      */
     private StreamingChatModel ragChatModel;
 
@@ -137,7 +139,7 @@ public class ChatApplicationService {
         ragChatModel = OpenAiStreamingChatModel.builder()
                 .apiKey(chatModelApiKey)
                 .baseUrl(chatModelBaseUrl)
-                .modelName("qwen3.6-plus")
+                .modelName(chatModelName)
                 .logRequests(true)
                 .logRequests(true)
                 .temperature(0.2)
