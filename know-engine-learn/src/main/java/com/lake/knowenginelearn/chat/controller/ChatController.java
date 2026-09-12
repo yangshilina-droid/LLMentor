@@ -45,7 +45,6 @@ public class ChatController {
      * 进度通知格式：{@code [PROGRESS]:xxx...}，用于在前端展示当前处理阶段，减少等待焦虑。
      * 推送环节包括：意图识别、问题改写、问题路由、排序筛选、生成回答等。
      *
-     * @param userId         用户ID
      * @param content        用户问题
      * @param conversationId 会话ID（可选，不传则自动创建新会话）
      */
