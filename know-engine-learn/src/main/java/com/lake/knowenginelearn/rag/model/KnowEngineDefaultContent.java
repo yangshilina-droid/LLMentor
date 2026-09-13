@@ -1,6 +1,5 @@
 package com.lake.knowenginelearn.rag.model;
 
-import com.lake.knowenginelearn.rag.constant.MetadataKeyConstant;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.rag.content.ContentMetadata;
 import dev.langchain4j.rag.content.DefaultContent;
@@ -27,12 +26,12 @@ public class KnowEngineDefaultContent extends DefaultContent {
 
     @Override
     public int hashCode() {
-        return Objects.requireNonNull(this.textSegment().metadata().getString(MetadataKeyConstant.EMBEDDING_ID)).hashCode();
+        return Objects.requireNonNull(this.metadata().get(ContentMetadata.EMBEDDING_ID)).hashCode();
     }
 
     @Override
     public boolean equals(Object o) {
-        return Objects.equals(this.textSegment().metadata().getString(MetadataKeyConstant.EMBEDDING_ID), ((KnowEngineDefaultContent) o).textSegment().metadata().getString(MetadataKeyConstant.EMBEDDING_ID));
+        return Objects.equals(this.metadata().get(ContentMetadata.EMBEDDING_ID), ((KnowEngineDefaultContent) o).metadata().get(ContentMetadata.EMBEDDING_ID));
     }
 
 }

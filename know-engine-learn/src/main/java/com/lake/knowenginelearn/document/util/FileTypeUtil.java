@@ -58,7 +58,7 @@ public class FileTypeUtil {
             return FileType.EXCEL;
         }
         if (isDocFile(fileName)) {
-            return FileType.EXCEL;
+            return FileType.DOC;
         }
 
         if (isTxtFile(fileName)) {
