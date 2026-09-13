@@ -186,6 +186,7 @@
         .toast.show { opacity: 1; transform: translateY(0); }
         .toast.success { background: #28a745; }
         .toast.error { background: #dc3545; }
+        .toast.warning { background: #ffc107; color: #333; }
         /* 空状态 */
         .empty-state { text-align: center; padding: 40px; color: #999; font-size: 14px; }
         /* 分段列表 */
@@ -1229,6 +1230,11 @@
             const res = await fetch(`/api/segment/${segId}`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const seg = await res.json();
+            // 父分段禁止直接编辑，提示用户修改子分段
+            if (seg.skipEmbedding === 1 || seg.skipEmbedding === '1') {
+                showToast('父分段不支持直接编辑，请修改对应的子分段，父分段内容会自动同步', 'warning');
+                return;
+            }
             document.getElementById('segEditId').value = seg.id;
             document.getElementById('segEditLockVersion').value = seg.lockVersion || 0;
             document.getElementById('segEditDocId').value = seg.documentId || '';

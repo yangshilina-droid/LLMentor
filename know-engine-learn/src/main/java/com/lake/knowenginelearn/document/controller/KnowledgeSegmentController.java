@@ -127,10 +127,17 @@ public class KnowledgeSegmentController {
 
     /**
      * 根据ID更新
+     * <p>
+     * 禁止直接修改父分段（skipEmbedding=1），父分段内容由子分段修改时自动同步。
+     * 如需修改父分段内容，请修改对应的子分段。
      */
     @PutMapping
     public boolean updateById(@RequestBody KnowledgeSegment segment) {
-        return knowledgeSegmentService.updateById(segment,true);
+        KnowledgeSegment existing = knowledgeSegmentService.getById(segment.getId());
+        if (existing != null && existing.getSkipEmbedding() != null && existing.getSkipEmbedding() == 1) {
+            throw new IllegalArgumentException("父分段不支持直接修改，请修改对应的子分段");
+        }
+        return knowledgeSegmentService.updateById(segment, true);
     }
 
     /**

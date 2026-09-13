@@ -6,6 +6,7 @@ import com.lake.knowenginelearn.document.entity.KnowledgeSegment;
 import com.lake.knowenginelearn.document.mapper.KnowledgeSegmentMapper;
 import com.lake.knowenginelearn.document.service.KnowledgeSegmentService;
 import com.lake.knowenginelearn.document.service.VectorStoreService;
+import com.lake.knowenginelearn.rag.constant.MetadataKeyConstant;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -15,8 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -101,8 +105,9 @@ public class KnowledgeSegmentServiceImpl extends ServiceImpl<KnowledgeSegmentMap
 
     /**
      * 更新分段，当文本内容变更时同步更新向量数据库（遵循分段更新与向量库同步规范）：
-     * 仅当文本内容变更 && 已有 embeddingId && skipEmbedding ≠ 1 时，
-     * 执行 ES 向量删除 → 重嵌入 → 写入流程；ES 操作失败仅记录日志，不中断 DB 更新。
+     * 1. 若子分段文本变更，同步更新对应父分段文本及 Redis 缓存；
+     * 2. 仅当文本内容变更 && 已有 embeddingId && skipEmbedding ≠ 1 时，
+     *    执行 ES 向量删除 → 重嵌入 → 写入流程；ES 操作失败仅记录日志，不中断 DB 更新。
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -112,8 +117,9 @@ public class KnowledgeSegmentServiceImpl extends ServiceImpl<KnowledgeSegmentMap
             return super.updateById(entity);
         }
 
+        boolean textChanged = entity.getText() != null && !entity.getText().equals(oldSegment.getText());
+
         if (updateVectorStore) {
-            boolean textChanged = entity.getText() != null && !entity.getText().equals(oldSegment.getText());
             boolean hasEmbedding = oldSegment.getEmbeddingId() != null;
             boolean skipEmbedding = oldSegment.getSkipEmbedding() != null && oldSegment.getSkipEmbedding() == 1;
 
@@ -140,6 +146,56 @@ public class KnowledgeSegmentServiceImpl extends ServiceImpl<KnowledgeSegmentMap
 
         }
 
+        // 文本变更时，同步更新父分段内容
+        if (textChanged) {
+            syncParentSegmentText(oldSegment, entity.getText());
+        }
+
         return super.updateById(entity);
+    }
+
+    /**
+     * 当子分段文本变更时，同步更新对应父分段的文本内容。
+     * <p>
+     * 父分段存储完整文本（skipEmbedding=1），子分段是其中的子串。
+     * 修改子分段时需将父分段中对应的旧文本替换为新文本，并清除 Redis 缓存，保证检索时获取最新内容。
+     *
+     * @param oldSegment 修改前的子分段（包含旧文本和 metadata）
+     * @param newText   修改后的新文本
+     */
+    private void syncParentSegmentText(KnowledgeSegment oldSegment, String newText) {
+        Map<String, String> metadataMap = oldSegment.getMetadataMap();
+        if (metadataMap == null) {
+            return;
+        }
+        String parentChunkId = metadataMap.get(MetadataKeyConstant.PARENT_CHUNK_ID);
+        if (parentChunkId == null) {
+            return;
+        }
+
+        // 查找父分段
+        QueryWrapper<KnowledgeSegment> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("chunk_id", parentChunkId);
+        KnowledgeSegment parentSegment = super.getOne(queryWrapper);
+        if (parentSegment == null) {
+            log.warn("子分段修改后同步父分段失败：未找到父分段, parentChunkId: {}", parentChunkId);
+            return;
+        }
+
+        // 将父分段文本中的旧子分段文本替换为新文本
+        String oldText = oldSegment.getText();
+        String parentText = parentSegment.getText();
+        String updatedParentText = parentText.replaceFirst(Pattern.quote(oldText), Matcher.quoteReplacement(newText));
+
+        if (!updatedParentText.equals(parentText)) {
+            parentSegment.setText(updatedParentText);
+            super.updateById(parentSegment);
+            log.info("子分段修改已同步更新父分段, parentChunkId: {}, parentSegmentId: {}", parentChunkId, parentSegment.getId());
+
+            // 清除父分段的 Redis 缓存
+            stringRedisTemplate.delete(parentChunkId);
+        } else {
+            log.warn("子分段修改后父分段文本未匹配到旧文本，跳过同步, parentChunkId: {}, segmentId: {}", parentChunkId, oldSegment.getId());
+        }
     }
 }
