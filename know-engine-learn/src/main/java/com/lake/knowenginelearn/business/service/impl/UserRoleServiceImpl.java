@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserRoleServiceImpl implements UserRoleService {
 
+    private static final String STAFF_LOGIN_PREFIX = "staff_";
+
     @Autowired
     private StaffInfoService staffInfoService;
 
@@ -33,7 +35,12 @@ public class UserRoleServiceImpl implements UserRoleService {
             return RoleEnum.OWNER;
         }
 
-        StaffInfo staffInfo = staffInfoService.getById(chatParam.userId());
+        StaffInfo staffInfo = null;
+        String userId = chatParam.userId();
+        if (userId != null && userId.startsWith(STAFF_LOGIN_PREFIX)) {
+            String empId = userId.substring(STAFF_LOGIN_PREFIX.length());
+            staffInfo = staffInfoService.getByEmpId(empId);
+        }
         if (staffInfo != null && staffInfo.getStatus() == StaffStatus.ON_JOB) {
             return RoleEnum.CUSTOMER_SERVICE;
         }

@@ -1,7 +1,12 @@
 package com.lake.knowenginelearn.chat.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.lake.knowenginelearn.ai.constant.KnowEngineIntent;
 import com.lake.knowenginelearn.ai.service.*;
+import com.lake.knowenginelearn.business.converter.CarInfoConverter;
+import com.lake.knowenginelearn.business.converter.MyCarConverter;
+import com.lake.knowenginelearn.business.entity.CarInfo;
+import com.lake.knowenginelearn.business.entity.MyCar;
 import com.lake.knowenginelearn.business.service.CarInfoService;
 import com.lake.knowenginelearn.business.service.MyCarService;
 import com.lake.knowenginelearn.business.service.UserRoleService;
@@ -238,28 +243,33 @@ public class ChatApplicationService {
     public Flux<String> ragChat(ChatParam chatParam) {
         KnowEngineIntent intent = KnowEngineIntent.getIntent(chatParam.intentRecognitionResult());
 
-        // 如果是维保服务、技术支持，则需要车辆信息
-        // if (intent == KnowEngineIntent.CAR_MAINTENANCE
-        //         || intent == KnowEngineIntent.CAR_TECH_SUPPORT) {
-        //     if (chatParam.intentRecognitionResult().entities().car_id() == null) {
-        //         List<MyCar> myCars = myCarService.getCarByUserId(chatParam.userId());
-        //         if (CollectionUtils.isEmpty(myCars)) {
-        //             return Flux.just("[WARN]:您还没有添加车辆信息，请先添加车辆信息");
-        //         } else if (myCars.size() >= 1) {
-        //             return Flux.just("[CARD]:请先选择车辆")
-        //                     .concatWith(Flux.just("[CARD_CHOICE_MYCAR]:" + JSON.toJSONString(MyCarConverter.INSTANCE.toVOList(myCars))));
-        //         }
-        //     }
-        // }
+        /**
+         * 只有用户通过网页端访问时，才需要车辆信息
+         */
+        if(chatParam.chatSource() == ChatSource.USER_WEB){
+            // 如果是维保服务、技术支持，则需要车辆信息
+            if (intent == KnowEngineIntent.CAR_MAINTENANCE
+                    || intent == KnowEngineIntent.CAR_TECH_SUPPORT) {
+                if (chatParam.intentRecognitionResult().entities().car_id() == null) {
+                    List<MyCar> myCars = myCarService.getCarByUserId(chatParam.userId());
+                    if (CollectionUtils.isEmpty(myCars)) {
+                        return Flux.just("[WARN]:您还没有添加车辆信息，请先添加车辆信息");
+                    } else if (myCars.size() >= 1) {
+                        return Flux.just("[CARD]:请先选择车辆")
+                                .concatWith(Flux.just("[CARD_CHOICE_MYCAR]:" + JSON.toJSONString(MyCarConverter.INSTANCE.toVOList(myCars))));
+                    }
+                }
+            }
 
-        // 如果是营销政策，则需要车辆信息
-        // if (intent == KnowEngineIntent.CAR_MARKETING) {
-        //     if (chatParam.intentRecognitionResult().entities().car_model() == null) {
-        //         List<CarInfo> carInfoList = carInfoService.getCarInfoByBrand(null);
-        //         return Flux.just("[CARD]:请先选择您要咨询的车辆")
-        //                 .concatWith(Flux.just("[CARD_CHOICE_CAR]:" + JSON.toJSONString(CarInfoConverter.INSTANCE.toVOList(carInfoList))));
-        //     }
-        // }
+            // 如果是营销政策，则需要车辆信息
+            if (intent == KnowEngineIntent.CAR_MARKETING) {
+                if (chatParam.intentRecognitionResult().entities().car_model() == null) {
+                    List<CarInfo> carInfoList = carInfoService.getCarInfoByBrand(null);
+                    return Flux.just("[CARD]:请先选择您要咨询的车辆")
+                            .concatWith(Flux.just("[CARD_CHOICE_CAR]:" + JSON.toJSONString(CarInfoConverter.INSTANCE.toVOList(carInfoList))));
+                }
+            }
+        }
 
         return doChat(chatParam);
     }
@@ -425,7 +435,8 @@ public class ChatApplicationService {
         sb.append(tablesSql.getContentAsString(UTF_8));
 
         // 从 table_meta 读取动态创建的表结构
-        List<TableMeta> tableMetas = knowEngineTableMetaService.list();
+        // 从 table_meta 读取当前激活版本对应的动态表结构
+        List<TableMeta> tableMetas = knowEngineTableMetaService.listActiveForQuery();
         if (!CollectionUtils.isEmpty(tableMetas)) {
             sb.append("\n\n");
             String dynamicSql = tableMetas.stream()

@@ -44,11 +44,13 @@ public class AccessTokenService {
     @PostConstruct
     public void init() throws Exception {
         if (Objects.isNull(appKey)) {
-            throw new RuntimeException("please set application.properties app.appKey=xxx");
+            log.warn("dingtalk appKey is not configured, access token will not be available");
+            return;
         }
 
         if (Objects.isNull(appSecret)) {
-            throw new RuntimeException("please set application.properties app.appSecret=xxx");
+            log.warn("dingtalk appSecret is not configured, access token will not be available");
+            return;
         }
 
         com.aliyun.teaopenapi.models.Config config = new com.aliyun.teaopenapi.models.Config();
@@ -66,8 +68,8 @@ public class AccessTokenService {
         }
 
         if (maxTryTimes <= 0) {
-            throw new RuntimeException("fail to get accessToken from remote, try 3 times, please check your appKey" +
-                    " and appSecret");
+            log.error("fail to get accessToken from remote, try 3 times, please check your appKey and appSecret, " +
+                    "application startup will not be blocked");
         }
     }
 
@@ -126,10 +128,16 @@ public class AccessTokenService {
     }
 
     public String getAccessToken() {
+        if (Objects.isNull(accessToken)) {
+            return null;
+        }
         return accessToken.accessToken;
     }
 
     public boolean isTokenNearlyExpired() {
+        if (Objects.isNull(accessToken)) {
+            return true;
+        }
         // if expired timestamp nearly 5000ms, should not send requests
         return accessToken.expireTimestamp < System.currentTimeMillis() - 5000L;
     }

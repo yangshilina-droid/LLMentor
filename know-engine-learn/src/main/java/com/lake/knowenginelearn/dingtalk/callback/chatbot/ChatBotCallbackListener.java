@@ -234,6 +234,7 @@ public class ChatBotCallbackListener implements OpenDingTalkCallbackListener<Cha
         return sb.toString();
     }
 
+    @Deprecated
     private String buildMyCarChoicesMarkdown(String prompt, List<MyCarVO> cars) {
         String header = (prompt != null && !prompt.isBlank()) ? prompt : "请选择您的车辆";
         StringBuilder sb = new StringBuilder();
@@ -253,6 +254,7 @@ public class ChatBotCallbackListener implements OpenDingTalkCallbackListener<Cha
         return sb.toString();
     }
 
+    @Deprecated
     private String buildCarChoicesMarkdown(String prompt, List<CarInfoVO> cars) {
         String header = (prompt != null && !prompt.isBlank()) ? prompt : "请选择您要咨询的车型";
         StringBuilder sb = new StringBuilder();

@@ -1,7 +1,9 @@
 package com.lake.knowenginelearn.rag.modules.reranker;
 
 import dev.langchain4j.model.scoring.onnx.OnnxScoringModel;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,6 +35,7 @@ import java.nio.file.StandardCopyOption;
  * 3. 放置到 modelPath 和 tokenizerPath 指定的路径下
  */
 @Slf4j
+@Component
 public class BgeScoringModel {
 
     /**
@@ -47,11 +50,22 @@ public class BgeScoringModel {
      */
     private static volatile OnnxScoringModel instance;
 
-    private BgeScoringModel() {
+
+    /**
+     * Spring 容器启动时预加载模型，避免首次问答时触发模型加载导致延迟
+     */
+    @PostConstruct
+    public void init() {
+        if (instance == null) {
+            loadModel();
+        }
     }
 
     /**
-     * 获取 OnnxScoringModel 单例实例（从 classpath 加载模型）
+     * 获取 OnnxScoringModel 单例实例
+     * <p>
+     * 正常情况下模型已在 {@link #init()} 中预加载完成，直接返回实例。
+     * 若在 Spring 容器初始化完成前被调用（如单元测试），则降级为懒加载。
      *
      * @return OnnxScoringModel 实例
      */
@@ -59,20 +73,30 @@ public class BgeScoringModel {
         if (instance == null) {
             synchronized (BgeScoringModel.class) {
                 if (instance == null) {
-                    String modelPath = resolveClasspathToFilePath(CLASSPATH_MODEL);
-                    String tokenizerPath = resolveClasspathToFilePath(CLASSPATH_TOKENIZER);
-
-                    log.info("正在初始化 BGE-RERANKER 评分模型...");
-                    log.info("模型路径: {}", modelPath);
-                    log.info("Tokenizer路径: {}", tokenizerPath);
-
-                    instance = new OnnxScoringModel(modelPath, tokenizerPath,8192);
-
-                    log.info("BGE-RERANKER 评分模型初始化完成");
+                    loadModel();
                 }
             }
         }
         return instance;
+    }
+
+    /**
+     * 加载 ONNX 模型与 tokenizer，初始化 OnnxScoringModel 实例
+     */
+    private static synchronized void loadModel() {
+        if (instance != null) {
+            return;
+        }
+        String modelPath = resolveClasspathToFilePath(CLASSPATH_MODEL);
+        String tokenizerPath = resolveClasspathToFilePath(CLASSPATH_TOKENIZER);
+
+        log.info("正在初始化 BGE-RERANKER 评分模型...");
+        log.info("模型路径: {}", modelPath);
+        log.info("Tokenizer路径: {}", tokenizerPath);
+
+        instance = new OnnxScoringModel(modelPath, tokenizerPath, 8192);
+
+        log.info("BGE-RERANKER 评分模型初始化完成");
     }
 
     /**

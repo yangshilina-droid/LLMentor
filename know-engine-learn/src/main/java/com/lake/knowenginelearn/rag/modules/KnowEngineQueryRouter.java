@@ -17,7 +17,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -43,7 +42,7 @@ import static dev.langchain4j.internal.Utils.getOrDefault;
  *   <li>返回对应类型的 ContentRetriever 集合</li>
  * </ol>
  * <p>
- * 当路由决策失败（JSON 解析异常或其他错误）时，返回空列表作为降级处理。
+ * 当路由决策失败（JSON 解析异常或其他错误）时，返回全部内容检索器作为降级处理，避免直接无结果。
  *
  * @see QueryRouter
  * @see ContentRetriever
@@ -177,15 +176,12 @@ public class KnowEngineQueryRouter implements QueryRouter {
             }
 
         } catch (JSONException jsonException) {
-            log.info("Route Failed , query: {} , response: {}", query, response);
-            log.info("Route Failed , jsonException: {}", jsonException);
-            // fixme
+            log.error("Route Failed due to invalid JSON, query: {}, response: {}", query, response, jsonException);
         } catch (Exception e) {
-            log.info("Route Failed , query: {} , response: {}", query, response);
-            log.info("Route Failed , jsonException: {}", e);
-            // fixme
+            log.error("Route Failed due to unexpected error, query: {}, response: {}", query, response, e);
         }
-        return List.of();
+        // 路由决策异常时降级为全量检索，避免直接无结果
+        return contentRetrievers;
     }
 
     protected Prompt createPrompt(Query query) {
