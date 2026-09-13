@@ -106,92 +106,92 @@
     </style>
 </head>
 <body>
-    <div class="login-card">
-        <div class="login-title">
-            <h1>📄 员工登录</h1>
-            <p>请使用工号和密码登录，进入文档管理</p>
-        </div>
-
-        <div class="error-msg" id="errorMsg"></div>
-
-        <form id="loginForm" onsubmit="return false;">
-            <div class="form-group">
-                <label for="empId">工号</label>
-                <input type="text" id="empId" name="empId" placeholder="请输入工号" autocomplete="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
-            </div>
-            <button type="submit" class="login-btn" id="loginBtn">登 录</button>
-        </form>
-
-        <div class="test-tip">
-            员工账号：请联系管理员获取工号
-        </div>
+<div class="login-card">
+    <div class="login-title">
+        <h1>📄 员工登录</h1>
+        <p>请使用工号和密码登录，进入文档管理</p>
     </div>
 
-    <script>
-        const loginForm = document.getElementById('loginForm');
-        const loginBtn = document.getElementById('loginBtn');
-        const errorMsgEl = document.getElementById('errorMsg');
+    <div class="error-msg" id="errorMsg"></div>
 
-        // 页面加载时检查是否已用员工账号登录，已登录则直接跳转到文档管理页
-        (async function checkLogin() {
-            try {
-                const resp = await fetch('/auth/isLogin');
-                const data = await resp.json();
-                if (data.code !== 200 || data.data !== true) {
-                    return;
-                }
-                const userResp = await fetch('/auth/userInfo');
-                const userData = await userResp.json();
-                if (userData.code === 200 && userData.data && userData.data.userType === 'staff') {
-                    window.location.href = '/document.html';
-                }
-            } catch (e) {
-                // 忽略
-            }
-        })();
+    <form id="loginForm" onsubmit="return false;">
+        <div class="form-group">
+            <label for="empId">工号</label>
+            <input type="text" id="empId" name="empId" placeholder="请输入工号" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="login-btn" id="loginBtn">登 录</button>
+    </form>
 
-        loginForm.addEventListener('submit', async function (e) {
-            e.preventDefault();
-            const empId = document.getElementById('empId').value.trim();
-            const password = document.getElementById('password').value.trim();
-            if (!empId || !password) {
-                showError('请输入工号和密码');
+    <div class="test-tip">
+        员工账号：请联系管理员获取工号
+    </div>
+</div>
+
+<script>
+    const loginForm = document.getElementById('loginForm');
+    const loginBtn = document.getElementById('loginBtn');
+    const errorMsgEl = document.getElementById('errorMsg');
+
+    // 页面加载时检查是否已用员工账号登录，已登录则直接跳转到文档管理页
+    (async function checkLogin() {
+        try {
+            const resp = await fetch('/auth/isLogin');
+            const data = await resp.json();
+            if (data.code !== 200 || data.data !== true) {
                 return;
             }
-
-            loginBtn.disabled = true;
-            loginBtn.textContent = '登录中...';
-            errorMsgEl.style.display = 'none';
-
-            try {
-                const resp = await fetch('/auth/staffLogin', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ empId: empId, password: password })
-                });
-                const data = await resp.json();
-                if (data.code === 200) {
-                    // 登录成功，跳转到文档管理页
-                    window.location.href = '/document.html';
-                } else {
-                    showError(data.msg || '登录失败');
-                }
-            } catch (err) {
-                showError('网络错误，请稍后重试');
-            } finally {
-                loginBtn.disabled = false;
-                loginBtn.textContent = '登 录';
+            const userResp = await fetch('/auth/userInfo');
+            const userData = await userResp.json();
+            if (userData.code === 200 && userData.data && userData.data.userType === 'staff') {
+                window.location.href = '/document.html';
             }
-        });
-
-        function showError(msg) {
-            errorMsgEl.textContent = msg;
-            errorMsgEl.style.display = 'block';
+        } catch (e) {
+            // 忽略
         }
-    </script>
+    })();
+
+    loginForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const empId = document.getElementById('empId').value.trim();
+        const password = document.getElementById('password').value.trim();
+        if (!empId || !password) {
+            showError('请输入工号和密码');
+            return;
+        }
+
+        loginBtn.disabled = true;
+        loginBtn.textContent = '登录中...';
+        errorMsgEl.style.display = 'none';
+
+        try {
+            const resp = await fetch('/auth/staffLogin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ empId: empId, password: password })
+            });
+            const data = await resp.json();
+            if (data.code === 200) {
+                // 登录成功，跳转到文档管理页
+                window.location.href = '/document.html';
+            } else {
+                showError(data.msg || '登录失败');
+            }
+        } catch (err) {
+            showError('网络错误，请稍后重试');
+        } finally {
+            loginBtn.disabled = false;
+            loginBtn.textContent = '登 录';
+        }
+    });
+
+    function showError(msg) {
+        errorMsgEl.textContent = msg;
+        errorMsgEl.style.display = 'block';
+    }
+</script>
 </body>
 </html>

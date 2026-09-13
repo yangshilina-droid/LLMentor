@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
+import com.lake.knowenginelearn.document.constant.KnowledgeBaseType;
 import com.lake.knowenginelearn.document.constant.SegmentStatus;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocumentVersion;
@@ -65,6 +66,9 @@ public class KnowledgeDocumentServiceImpl extends ServiceImpl<KnowledgeDocumentM
         // 物理删除该文档下的所有分段
         knowledgeSegmentMapper.physicalDeleteByDocumentId(docId);
 
+        // 删除该文档对应的 DATA_QUERY 动态物理表
+        dropDataQueryTableIfExists(docId);
+
         // 物理删除该文档的所有版本记录
         knowledgeDocumentVersionMapper.physicalDeleteByDocId(docId);
 
@@ -90,11 +94,31 @@ public class KnowledgeDocumentServiceImpl extends ServiceImpl<KnowledgeDocumentM
         // 物理删除这些文档下的所有分段
         knowledgeSegmentMapper.physicalDeleteByDocumentIds(docIds);
 
+        // 删除这些文档对应的 DATA_QUERY 动态物理表
+        for (Long docId : docIds) {
+            dropDataQueryTableIfExists(docId);
+        }
+
         // 物理删除这些文档的所有版本记录
         knowledgeDocumentVersionMapper.physicalDeleteByDocIds(docIds);
 
         // 物理删除文档本身
         return baseMapper.physicalDeleteByDocIds(docIds) > 0;
+    }
+
+    /**
+     * 如果文档是 DATA_QUERY 类型且配置了表名，则删除对应的动态物理表及元数据
+     */
+    private void dropDataQueryTableIfExists(Long docId) {
+        KnowledgeDocument document = this.getById(docId);
+        if (document == null
+                || document.getKnowledgeBaseType() != KnowledgeBaseType.DATA_QUERY
+                || document.getTableName() == null
+                || document.getTableName().isBlank()) {
+            return;
+        }
+        String physicalTableName = excelProcessServiceImpl.generatePhysicalTableName(document.getTableName());
+        excelProcessServiceImpl.dropTable(physicalTableName);
     }
 
     /**
@@ -113,6 +137,9 @@ public class KnowledgeDocumentServiceImpl extends ServiceImpl<KnowledgeDocumentM
 
     @Autowired
     private DocumentCleanupService documentCleanupService;
+
+    @Autowired
+    private ExcelProcessServiceImpl excelProcessServiceImpl;
 
     /**
      * 让指定版本失效：
@@ -207,6 +234,58 @@ public class KnowledgeDocumentServiceImpl extends ServiceImpl<KnowledgeDocumentM
         boolean result = knowledgeDocumentVersionService.updateById(version);
         Assert.isTrue(result, "版本记录更新失败: " + versionId);
         log.info("版本生效完成, versionId={}", versionId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean advanceDocumentAndVersionStatus(Long docId, Long versionId, DocumentStatus targetStatus) {
+        Assert.notNull(docId, "文档ID不能为空");
+        Assert.notNull(versionId, "版本ID不能为空");
+        Assert.notNull(targetStatus, "目标状态不能为空");
+
+        KnowledgeDocument document = this.getById(docId);
+        Assert.notNull(document, "文档不存在: docId=" + docId);
+
+        KnowledgeDocumentVersion version = knowledgeDocumentVersionService.getById(versionId);
+        Assert.notNull(version, "版本记录不存在: versionId=" + versionId);
+        Assert.isTrue(docId.equals(version.getDocId()), "版本不属于该文档");
+
+        boolean updated = false;
+
+        if (shouldAdvanceStatus(document.getStatus(), targetStatus)) {
+            document.setStatus(targetStatus);
+            boolean docResult = this.updateById(document);
+            Assert.isTrue(docResult, "文档状态更新失败: docId=" + docId);
+            updated = true;
+            log.info("文档状态已推进, docId={}, status={}", docId, targetStatus);
+        } else {
+            log.info("文档状态无需推进, docId={}, currentStatus={}, targetStatus={}",
+                    docId, document.getStatus(), targetStatus);
+        }
+
+        if (shouldAdvanceStatus(version.getStatus(), targetStatus)) {
+            version.setStatus(targetStatus);
+            boolean versionResult = knowledgeDocumentVersionService.updateById(version);
+            Assert.isTrue(versionResult, "版本状态更新失败: versionId=" + versionId);
+            updated = true;
+            log.info("版本状态已推进, versionId={}, status={}", versionId, targetStatus);
+        } else {
+            log.info("版本状态无需推进, versionId={}, currentStatus={}, targetStatus={}",
+                    versionId, version.getStatus(), targetStatus);
+        }
+
+        return updated;
+    }
+
+    /**
+     * 判断状态是否需要推进。
+     * 当前状态为空或按枚举声明顺序早于目标状态时，才允许推进。
+     */
+    private boolean shouldAdvanceStatus(DocumentStatus current, DocumentStatus target) {
+        if (current == null) {
+            return true;
+        }
+        return current.ordinal() < target.ordinal();
     }
 
     @Override

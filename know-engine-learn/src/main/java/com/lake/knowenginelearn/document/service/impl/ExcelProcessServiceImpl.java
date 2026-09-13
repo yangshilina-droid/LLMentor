@@ -48,7 +48,9 @@ public class ExcelProcessServiceImpl implements FileProcessService {
     public String processDocument(KnowledgeDocument document, InputStream inputStream) {
         String documentTitle = document.getDocTitle();
         String originalTableName = document.getTableName();
-        log.info("开始处理Excel文件: {}", documentTitle);
+        Long versionId = document.getCurrentVersionId();
+        Assert.notNull(versionId, "文档当前版本ID不能为空");
+        log.info("开始处理Excel文件: {}, versionId={}", documentTitle, versionId);
 
         // 1. 解析Excel文件
         try {
@@ -64,45 +66,65 @@ public class ExcelProcessServiceImpl implements FileProcessService {
                 throw new IllegalArgumentException("Excel表头为空");
             }
 
-            // 3. 生成或验证表名
-            String tableName = generateTableName(originalTableName);
+            // 3. 生成表名（同一逻辑表在所有版本中共用）
+            String tableName = generatePhysicalTableName(originalTableName);
 
-            // 4. 检查表名是否已存在
-            if (tableMetaMapper.checkTableExists(tableName) > 0) {
-                if (document.isOverride()) {
-                    dropTable(tableName);
-                } else {
-                    throw new IllegalArgumentException("表 " + tableName + " 已存在");
-                }
-            }
-
-            // 5. 生成列信息
+            // 4. 生成列信息
             List<ColumnInfo> columns = generateColumnInfo(headers);
 
-            // 6. 生成建表SQL
-            String createTableSql = generateCreateTableSql(tableName,document.getDescription(), columns);
-            log.info("生成建表SQL: {}", createTableSql);
+            // 5. 判断表是否已存在
+            boolean tableExists = tableMetaMapper.checkTableExists(tableName) > 0;
 
-            // 7. 执行建表
-            tableMetaMapper.executeCreateTable(createTableSql);
-            log.info("表 {} 创建成功", tableName);
+            if (tableExists) {
+                // 5.1 已存在：校验表结构必须与之前完全一致，否则禁止上传
+                TableMeta existingMeta = tableMetaMapper.selectOne(
+                        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TableMeta>()
+                                .eq(TableMeta::getTableName, tableName)
+                );
+                Assert.notNull(existingMeta, "表 " + tableName + " 的元数据不存在");
+                List<ColumnInfo> existingColumns = parseColumnInfo(existingMeta.getColumnsInfo());
+                if (!isSchemaCompatible(existingColumns, columns)) {
+                    throw new IllegalArgumentException(
+                            "Excel 表结构与已有表 " + tableName + " 不一致，禁止上传。请保持表头、列名、顺序及类型完全一致。");
+                }
 
-            // 8. 插入数据
-            List<List<String>> dataRows = excelData.subList(1, excelData.size());
-            int insertedCount = insertData(tableName, columns, dataRows);
-            log.info("插入数据 {} 行", insertedCount);
+                // 5.2 结构一致：在一个事务内删除旧数据并写入新数据，实现数据替换
+                log.info("表 {} 已存在且结构一致，执行数据替换", tableName);
+                deleteAllData(tableName);
+                List<List<String>> dataRows = excelData.subList(1, excelData.size());
+                int insertedCount = insertData(tableName, columns, dataRows);
+                log.info("表 {} 数据替换完成，新数据 {} 行", tableName, insertedCount);
 
-            // 9. 保存表元数据
-            TableMeta tableMeta = new TableMeta();
-            tableMeta.setTableName(tableName);
-            tableMeta.setDescription(document.getDescription() != null ? document.getDescription() : "从Excel导入: " + documentTitle);
-            tableMeta.setCreateSql(createTableSql);
-            tableMeta.setColumnsInfo(JSON.toJSONString(columns));
-            tableMeta.setCreatedAt(LocalDateTime.now());
-            tableMeta.setUpdatedAt(LocalDateTime.now());
-            int result = tableMetaMapper.insert(tableMeta);
-            Assert.isTrue(result == 1, "表元数据保存失败");
-            log.info("表元数据保存成功, ID: {}", tableMeta.getId());
+                // 5.3 更新元数据中的版本绑定为当前版本
+                existingMeta.setVersionId(versionId);
+                existingMeta.setDescription(document.getDescription() != null ? document.getDescription() : "从Excel导入: " + documentTitle);
+                existingMeta.setUpdatedAt(LocalDateTime.now());
+                boolean updateResult = tableMetaMapper.updateById(existingMeta) > 0;
+                Assert.isTrue(updateResult, "表元数据更新失败");
+            } else {
+                // 6. 表不存在：新建表并导数
+                String createTableSql = generateCreateTableSql(tableName, document.getDescription(), columns);
+                log.info("生成建表SQL: {}", createTableSql);
+
+                tableMetaMapper.executeCreateTable(createTableSql);
+                log.info("表 {} 创建成功", tableName);
+
+                List<List<String>> dataRows = excelData.subList(1, excelData.size());
+                int insertedCount = insertData(tableName, columns, dataRows);
+                log.info("插入数据 {} 行", insertedCount);
+
+                TableMeta tableMeta = new TableMeta();
+                tableMeta.setTableName(tableName);
+                tableMeta.setDescription(document.getDescription() != null ? document.getDescription() : "从Excel导入: " + documentTitle);
+                tableMeta.setCreateSql(createTableSql);
+                tableMeta.setColumnsInfo(JSON.toJSONString(columns));
+                tableMeta.setVersionId(versionId);
+                tableMeta.setCreatedAt(LocalDateTime.now());
+                tableMeta.setUpdatedAt(LocalDateTime.now());
+                int result = tableMetaMapper.insert(tableMeta);
+                Assert.isTrue(result == 1, "表元数据保存失败");
+                log.info("表元数据保存成功, ID: {}", tableMeta.getId());
+            }
 
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -116,6 +138,32 @@ public class ExcelProcessServiceImpl implements FileProcessService {
             }
         }
         return null;
+    }
+
+    /**
+     * 根据逻辑表名生成物理表名
+     * <p>
+     * 同一逻辑表在所有版本中复用同一个物理表名。
+     */
+    public String generatePhysicalTableName(String originalFilename) {
+        String baseName = originalFilename;
+        // 去掉扩展名
+        int dotIndex = baseName.lastIndexOf('.');
+        if (dotIndex > 0) {
+            baseName = baseName.substring(0, dotIndex);
+        }
+        // 清理非法字符
+        baseName = sanitizeTableName(baseName);
+        // 限制 baseName 长度，确保加上前缀后不超过 MySQL 表名上限 64
+        int maxBaseLength = 64 - TABLE_PREFIX.length();
+        if (baseName.length() > maxBaseLength) {
+            baseName = baseName.substring(0, maxBaseLength);
+        }
+        baseName = baseName.replaceAll("_+$", "");
+        if (baseName.isEmpty()) {
+            baseName = "table";
+        }
+        return TABLE_PREFIX + baseName;
     }
 
 
@@ -133,11 +181,8 @@ public class ExcelProcessServiceImpl implements FileProcessService {
             tableMetaMapper.dropTable(tableName);
             log.info("物理表 {} 删除成功", tableName);
 
-            // 2. 删除元数据记录
-            tableMetaMapper.delete(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TableMeta>()
-                            .eq(TableMeta::getTableName, tableName)
-            );
+            // 2. 物理删除元数据记录（BaseEntity 开启了逻辑删除，必须绕过 @TableLogic）
+            tableMetaMapper.physicalDeleteByTableName(tableName);
             log.info("表 {} 的元数据删除成功", tableName);
         });
     }
@@ -174,19 +219,53 @@ public class ExcelProcessServiceImpl implements FileProcessService {
     }
 
     /**
-     * 生成表名
+     * 解析已保存的列信息 JSON
      */
-    private String generateTableName(String originalFilename) {
-        String baseName = originalFilename;
-        // 去掉扩展名
-        int dotIndex = baseName.lastIndexOf('.');
-        if (dotIndex > 0) {
-            baseName = baseName.substring(0, dotIndex);
+    private List<ColumnInfo> parseColumnInfo(String columnsInfoJson) {
+        if (columnsInfoJson == null || columnsInfoJson.isBlank()) {
+            return Collections.emptyList();
         }
-        // 清理非法字符
-        baseName = sanitizeTableName(baseName);
-        // 添加前缀和时间戳
-        return TABLE_PREFIX + baseName;
+        return JSON.parseArray(columnsInfoJson, ColumnInfo.class);
+    }
+
+    /**
+     * 判断两次上传的表结构是否一致
+     * <p>
+     * 要求：列数量、列名、数据类型、顺序完全一致
+     */
+    private boolean isSchemaCompatible(List<ColumnInfo> existingColumns, List<ColumnInfo> newColumns) {
+        if (existingColumns == null || newColumns == null) {
+            return existingColumns == newColumns;
+        }
+        if (existingColumns.size() != newColumns.size()) {
+            return false;
+        }
+        for (int i = 0; i < existingColumns.size(); i++) {
+            ColumnInfo a = existingColumns.get(i);
+            ColumnInfo b = newColumns.get(i);
+            if (a == null || b == null) {
+                return false;
+            }
+            if (!Objects.equals(a.getColumnName(), b.getColumnName())) {
+                return false;
+            }
+            if (!Objects.equals(a.getDataType(), b.getDataType())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 清空指定表的所有数据
+     */
+    private void deleteAllData(String tableName) {
+        if (!isValidTableName(tableName)) {
+            throw new IllegalArgumentException("无效的表名: " + tableName);
+        }
+        String deleteSql = "DELETE FROM `" + tableName + "`";
+        jdbcTemplate.execute(deleteSql);
+        log.info("表 {} 旧数据已清空", tableName);
     }
 
     /**

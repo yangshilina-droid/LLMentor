@@ -2,6 +2,7 @@ package com.lake.knowenginelearn.document.service;
 
 
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
 import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
@@ -9,6 +10,7 @@ import com.lake.knowenginelearn.document.entity.KnowledgeDocumentVersion;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.Map;
 
 /**
  * 文档处理服务接口
@@ -18,10 +20,12 @@ public interface DocumentProcessService {
 
     /**
      * 上传文件
+     * @param documentUploadParam 上传参数
+     * @param uploadUser 上传用户
      * @return 保存后的文档记录
      * @throws IOException IO异常
      */
-    public KnowledgeDocument upload(DocumentUploadParam documentUploadParam) throws IOException;
+    public KnowledgeDocument upload(DocumentUploadParam documentUploadParam, String uploadUser) throws IOException;
 
     /**
      * 上传文档新版本
@@ -61,4 +65,14 @@ public interface DocumentProcessService {
      * @return 更新后的文档记录
      */
     public KnowledgeDocument switchVersion(Long docId, Long versionId);
+
+    /**
+     * 预览 DATA_QUERY 类型文档的动态表数据
+     *
+     * @param docId   文档ID
+     * @param current 当前页
+     * @param size    每页大小
+     * @return 分页数据
+     */
+    public Page<Map<String, Object>> previewData(Long docId, int current, int size);
 }

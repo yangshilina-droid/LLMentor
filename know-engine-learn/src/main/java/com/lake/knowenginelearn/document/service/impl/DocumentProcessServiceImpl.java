@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.google.common.base.Stopwatch;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.constant.FileType;
@@ -13,12 +14,12 @@ import com.lake.knowenginelearn.document.entity.*;
 import com.lake.knowenginelearn.document.event.DocumentChunkedEvent;
 import com.lake.knowenginelearn.document.event.DocumentConvertedEvent;
 import com.lake.knowenginelearn.document.mapper.KnowledgeSegmentMapper;
+import com.lake.knowenginelearn.document.mapper.TableMetaMapper;
 import com.lake.knowenginelearn.document.service.*;
-import com.lake.knowenginelearn.document.util.DocumentPermissionUtils;
 import com.lake.knowenginelearn.document.util.FileTypeUtil;
+import com.lake.knowenginelearn.document.util.VersionUtil;
 import com.lake.knowenginelearn.infra.lock.DistributeLock;
 import com.lake.knowenginelearn.rag.constant.MetadataKeyConstant;
-import com.lake.knowenginelearn.rag.constant.RoleEnum;
 import com.lake.knowenginelearn.rag.modules.splitter.DocumentSplitterFactory;
 import com.lake.knowenginelearn.rag.modules.splitter.ExcelSplitter;
 import dev.langchain4j.data.document.Document;
@@ -77,12 +78,18 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
     @Autowired
     private DocumentCleanupService documentCleanupService;
 
+    @Autowired
+    private ExcelProcessServiceImpl excelProcessServiceImpl;
+
+    @Autowired
+    private TableMetaMapper tableMetaMapper;
+
     @Value("${minio.bucketName}")
     private String bucketName;
 
     @Override
-    @DistributeLock(scene = "document-upload", keyExpression = "#documentUploadParam.uploadUser", waitTime = 0)
-    public KnowledgeDocument upload(DocumentUploadParam documentUploadParam) throws IOException {
+    @DistributeLock(scene = "document-upload", keyExpression = "#uploadUser", waitTime = 0)
+    public KnowledgeDocument upload(DocumentUploadParam documentUploadParam, String uploadUser) throws IOException {
         // 计算文件内容hash，用于去重
         String contentHash = calculateContentHash(documentUploadParam.file());
 
@@ -91,51 +98,63 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             throw new IllegalArgumentException("文档内容已存在，请勿重复上传");
         }
 
+        // 创建文档记录
+        KnowledgeDocument document = new KnowledgeDocument().create(documentUploadParam);
+        boolean result = knowledgeDocumentService.save(document);
+        Assert.isTrue(result, "文件上传失败");
+
+
+        log.info("start to upload ....");
+        String fileName = documentUploadParam.file().getOriginalFilename();
+        // 用minio上传
+        String fileUrl = null;
         try {
-            log.info("start to upload ....");
-            String fileName = documentUploadParam.file().getOriginalFilename();
-            // 用minio上传
-            String fileUrl = fileStorageService.uploadFile(documentUploadParam.file(), fileName);
-
-            // 构建文档记录
-            KnowledgeDocument document = new KnowledgeDocument();
-            document.setDocTitle(documentUploadParam.title());
-            document.setStatus(DocumentStatus.UPLOADED);
-            document.setAccessibleBy(documentUploadParam.accessibleBy());
-            document.setDescription(documentUploadParam.description());
-            document.setKnowledgeBaseType(KnowledgeBaseType.valueOf(documentUploadParam.knowledgeBaseType()));
-            document.setTableName(documentUploadParam.tableName());
-            document.setAccessibleBy(DocumentPermissionUtils.getDocumentPermission(RoleEnum.valueOf(documentUploadParam.accessibleBy())));
-
-            // 保存到数据库
-            boolean result = knowledgeDocumentService.save(document);
-            Assert.isTrue(result, "文件上传失败");
-
-            // 处理文档（转换/存储），获取转换后的文档URL
-            String convertedDocUrl = null;
-            FileProcessService fileProcessService = fileProcessServiceFactory.get(
-                    FileTypeUtil.getFileType(fileName, documentUploadParam.file()), document.getKnowledgeBaseType());
-            if (fileProcessService != null) {
-                convertedDocUrl = fileProcessService.processDocument(document, documentUploadParam.file().getInputStream());
-            } else {
-                document.setStatus(document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH
-                        ? DocumentStatus.CONVERTED : DocumentStatus.STORED);
-                result = knowledgeDocumentService.updateById(document);
-                Assert.isTrue(result, "文件状态更新失败");
-                convertedDocUrl = fileUrl;
-            }
-
-            // 创建初始版本记录（含文件URL、转换后URL、上传用户、内容哈希）
-            KnowledgeDocumentVersion versionRecord = createVersionRecord(
-                    document.getDocId(), "1.0.0", fileUrl, convertedDocUrl,
-                    documentUploadParam.uploadUser(), contentHash, document.getStatus(), null);
-            document.setCurrentVersionId(versionRecord.getVersionId());
-            knowledgeDocumentService.updateById(document);
-
-            return document;
+            fileUrl = fileStorageService.uploadFile(documentUploadParam.file(), fileName);
         } catch (Exception e) {
-            throw new IOException("文件上传失败: " + e.getMessage(), e);
+            knowledgeDocumentService.removeDocumentWithSegments(document.getDocId());
+            log.info("文件上传失败，文档已删除");
+            return null;
         }
+
+        // 创建初始版本记录
+        KnowledgeDocumentVersion versionRecord = createVersionRecord(
+                document.getDocId(), documentUploadParam.version(), fileUrl, null,
+                uploadUser, contentHash, DocumentStatus.UPLOADED, null);
+        document.setCurrentVersionId(versionRecord.getVersionId());
+
+        // 处理文档（转换/存储），获取转换后的文档URL
+        String convertedDocUrl = processFile(fileName, documentUploadParam.file(), document, fileUrl);
+
+        // 更新版本记录的转换后URL
+        versionRecord = knowledgeDocumentVersionService.getById(versionRecord.getVersionId());
+        versionRecord.setConvertedDocUrl(convertedDocUrl);
+        result = knowledgeDocumentVersionService.updateById(versionRecord);
+        Assert.isTrue(result, "版本记录更新失败");
+
+        KnowledgeDocument documentInDb = knowledgeDocumentService.getById(document.getDocId());
+        documentInDb.setCurrentVersionId(versionRecord.getVersionId());
+        result = knowledgeDocumentService.updateById(documentInDb);
+        Assert.isTrue(result, "文档当前版本更新失败");
+
+        return document;
+    }
+
+    /**
+     * 处理文档（转换/存储）
+     */
+    private String processFile(String fileName, MultipartFile documentUploadParam, KnowledgeDocument document, String fileUrl) throws IOException {
+        String convertedDocUrl;
+        FileProcessService fileProcessService = fileProcessServiceFactory.get(FileTypeUtil.getFileType(fileName, documentUploadParam), document.getKnowledgeBaseType());
+        if (fileProcessService != null) {
+            convertedDocUrl = fileProcessService.processDocument(document, documentUploadParam.getInputStream());
+        } else {
+            DocumentStatus targetStatus = document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH
+                    ? DocumentStatus.CONVERTED : DocumentStatus.STORED;
+            knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), targetStatus);
+            document.setStatus(targetStatus);
+            convertedDocUrl = fileUrl;
+        }
+        return convertedDocUrl;
     }
 
     @Override
@@ -147,7 +166,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
         // 校验版本号必须大于已有最大版本号
         String latestVersion = knowledgeDocumentVersionService.getLatestVersion(docId);
-        if (latestVersion != null && KnowledgeDocumentVersionServiceImpl.compareVersions(version, latestVersion) <= 0) {
+        if (latestVersion != null && VersionUtil.compareVersions(version, latestVersion) <= 0) {
             throw new IllegalArgumentException("版本号 " + version + " 不大于现有最新版本号 " + latestVersion + "，请使用更大的版本号");
         }
 
@@ -159,42 +178,40 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             throw new IllegalArgumentException("文档内容已存在，请勿重复上传");
         }
 
+        KnowledgeDocumentVersion versionRecord = null;
+        log.info("start to upload version {} for doc {} ....", version, docId);
+
+        // 1. 上传新版本文件到MinIO（不清理旧版本数据，保证处理期间旧版本仍可查询）
+        String fileName = file.getOriginalFilename();
+        String fileUrl = null;
         try {
-            log.info("start to upload version {} for doc {} ....", version, docId);
-
-            // 1. 上传新版本文件到MinIO（不清理旧版本数据，保证处理期间旧版本仍可查询）
-            String fileName = file.getOriginalFilename();
-            String fileUrl = fileStorageService.uploadFile(file, fileName);
-
-            // 2. 更新文档主表状态
-            document.setStatus(DocumentStatus.UPLOADED);
-            knowledgeDocumentService.updateById(document);
-
-            // 3. 处理文档（转换/存储），获取转换后的文档URL
-            String convertedDocUrl = null;
-            FileProcessService fileProcessService = fileProcessServiceFactory.get(
-                    FileTypeUtil.getFileType(fileName, file), document.getKnowledgeBaseType());
-            if (fileProcessService != null) {
-                convertedDocUrl = fileProcessService.processDocument(document, file.getInputStream());
-            } else {
-                document.setStatus(document.getKnowledgeBaseType() == KnowledgeBaseType.DOCUMENT_SEARCH
-                        ? DocumentStatus.CONVERTED : DocumentStatus.STORED);
-                knowledgeDocumentService.updateById(document);
-                convertedDocUrl = fileUrl;
-            }
-
-            // 4. 创建新版本记录（含文件URL、转换后URL、上传用户、内容哈希）
-            KnowledgeDocumentVersion versionRecord = createVersionRecord(
-                    document.getDocId(), version, fileUrl, convertedDocUrl,
-                    uploadUser, contentHash, document.getStatus(), changelog);
-            document.setCurrentVersionId(versionRecord.getVersionId());
-            knowledgeDocumentService.updateById(document);
-
-            log.info("文档 {} 新版本 {} 上传完成，旧版本数据保留中，待新版本向量化完成后自动清理", docId, version);
-            return document;
+            fileUrl = fileStorageService.uploadFile(file, fileName);
         } catch (Exception e) {
-            throw new IOException("版本上传失败: " + e.getMessage(), e);
+            throw new RuntimeException(e);
         }
+
+        // 2. 先创建新版本记录，使 processDocument 内部可以推进版本状态
+        versionRecord = createVersionRecord(
+                document.getDocId(), version, fileUrl, null,
+                uploadUser, contentHash, DocumentStatus.UPLOADED, changelog);
+        // 这一步先不更新数据库，只是为了让后续的操作能从document中取出version，避免npm和流程走不下去
+        // document的更新会在最后执行，确保前置流程都完成后实现版本的切换。
+        document.setCurrentVersionId(versionRecord.getVersionId());
+
+        // 3. 处理文档（转换/存储），获取转换后的文档URL
+        String convertedDocUrl = processFile(fileName, file, document, fileUrl);
+
+        // 4. 更新版本记录的转换后URL
+        versionRecord = knowledgeDocumentVersionService.getById(versionRecord.getVersionId());
+        versionRecord.setConvertedDocUrl(convertedDocUrl);
+        boolean result = knowledgeDocumentVersionService.updateById(versionRecord);
+        Assert.isTrue(result, "版本记录更新失败");
+
+        result = knowledgeDocumentService.updateById(document);
+        Assert.isTrue(result, "文档当前版本更新失败");
+
+        log.info("文档 {} 新版本 {} 上传完成，旧版本数据保留中，待新版本向量化完成后自动清理", docId, version);
+        return document;
     }
 
     @Override
@@ -209,7 +226,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         Assert.notNull(versionRecord, "文档版本不存在");
         Assert.notNull(versionRecord.getConvertedDocUrl(), "文档未转换完成");
 
-        if (document.getStatus() == DocumentStatus.CHUNKED) {
+        if (versionRecord.getStatus() == DocumentStatus.CHUNKED) {
             // 返回已切分的分段数量（仅统计当前版本的分段，排除旧版本残留）
             Long chunkedCount = knowledgeSegmentService.count(new QueryWrapper<KnowledgeSegment>()
                     .eq("document_id", document.getDocId())
@@ -218,7 +235,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             return chunkedCount.intValue();
         }
 
-        if (document.getStatus() != DocumentStatus.CONVERTED) {
+        if (versionRecord.getStatus() != DocumentStatus.CONVERTED) {
             throw new RuntimeException("文档状态不为CONVERTED，无法完成切分");
         }
 
@@ -251,14 +268,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
             knowledgeSegment.setText(segment.text());
             knowledgeSegment.setChunkId(segment.metadata().getString(MetadataKeyConstant.CHUNK_ID));
             Metadata metadata = segment.metadata();
-            metadata.put(MetadataKeyConstant.DOC_ID, document.getDocId());
-            metadata.put(MetadataKeyConstant.FILE_NAME, document.getDocTitle());
-            metadata.put(MetadataKeyConstant.URL, versionRecord.getDocUrl());
-            if (document.getCurrentVersionId() != null) {
-                metadata.put(MetadataKeyConstant.VERSION, document.getCurrentVersionId());
-            }
-
-            knowledgeSegment.setMetadata(enrichMetadata(document, knowledgeSegment, metadata));
+            knowledgeSegment.setMetadata(enrichMetadata(document, versionRecord, metadata));
             knowledgeSegment.setDocumentId(document.getDocId());
             knowledgeSegment.setDocumentVersion(document.getCurrentVersionId());
             knowledgeSegment.setChunkOrder(i);
@@ -285,14 +295,8 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         int segmentCount = knowledgeSegments.size();
 
         // 6. 更新文档状态为 CHUNKED，并保存分段参数
-        document.setStatus(DocumentStatus.CHUNKED);
-        document.setSplitParam(documentSplitParam);
-        boolean updateResult = knowledgeDocumentService.updateById(document);
-        Assert.isTrue(updateResult, "更新文档状态失败");
-
-        versionRecord.setStatus(DocumentStatus.CHUNKED);
-        updateResult = knowledgeDocumentVersionService.updateById(versionRecord);
-        Assert.isTrue(updateResult, "更新文档版本状态失败");
+        boolean advanceResult = knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CHUNKED);
+        Assert.isTrue(advanceResult, "更新文档版本状态失败");
 
         // 发送文档已分段事件
         publishChunkedEvent(document, segmentCount);
@@ -304,11 +308,16 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
      * 填充元数据
      *
      * @param document         文档信息
-     * @param knowledgeSegment 知识片段
      * @param metadata         元数据
      * @return
      */
-    private static String enrichMetadata(KnowledgeDocument document, KnowledgeSegment knowledgeSegment, Metadata metadata) {
+    private static String enrichMetadata(KnowledgeDocument document,KnowledgeDocumentVersion versionRecord,  Metadata metadata) {
+        metadata.put(MetadataKeyConstant.DOC_ID, document.getDocId());
+        metadata.put(MetadataKeyConstant.FILE_NAME, document.getDocTitle());
+        metadata.put(MetadataKeyConstant.URL, versionRecord.getDocUrl());
+        if (document.getCurrentVersionId() != null) {
+            metadata.put(MetadataKeyConstant.VERSION, document.getCurrentVersionId());
+        }
         Map<String, Object> metadataMap = metadata.toMap();
         metadataMap.put(MetadataKeyConstant.ACCESSIBLE_BY, document.getAccessibleBy());
 
@@ -376,6 +385,19 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
 
         log.info("切换文档 {} 的版本：从 versionId={} 切换到 versionId={}", docId, document.getCurrentVersionId(), versionId);
 
+        // DATA_QUERY 类型文档无分段/向量，直接切换当前版本即可
+        if (document.getKnowledgeBaseType() == KnowledgeBaseType.DATA_QUERY) {
+            // DATA_QUERY 类型不支持回退到旧版本，只能保持为最新版本
+            String latestVersion = knowledgeDocumentVersionService.getLatestVersion(docId);
+            if (latestVersion != null && VersionUtil.compareVersions(versionRecord.getVersion(), latestVersion) < 0) {
+                throw new IllegalArgumentException("DATA_QUERY 类型文档不支持切换到旧版本");
+            }
+            document.setCurrentVersionId(versionId);
+            boolean docUpdateResult = knowledgeDocumentService.updateById(document);
+            Assert.isTrue(docUpdateResult, "更新文档版本失败");
+            return document;
+        }
+
         // 更新原版本文档片段状态为 STORED
         LambdaUpdateWrapper<KnowledgeSegment> updateWrapper = Wrappers.<KnowledgeSegment>lambdaUpdate()
                 .set(KnowledgeSegment::getStatus, SegmentStatus.STORED)
@@ -393,6 +415,30 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
         Assert.isTrue(docUpdateResult, "更新文档版本失败");
 
         return document;
+    }
+
+    @Override
+    public Page<Map<String, Object>> previewData(Long docId, int current, int size) {
+        KnowledgeDocument document = knowledgeDocumentService.getById(docId);
+        Assert.notNull(document, "文档不存在");
+        Assert.isTrue(document.getKnowledgeBaseType() == KnowledgeBaseType.DATA_QUERY, "仅支持数据查询类型文档");
+
+        String logicalTableName = document.getTableName();
+        Assert.hasText(logicalTableName, "文档未配置数据表名称");
+
+        String physicalTableName = excelProcessServiceImpl.generatePhysicalTableName(logicalTableName);
+        Assert.isTrue(tableMetaMapper.checkTableExists(physicalTableName) > 0, "数据表不存在");
+
+        long total = ((Number) tableMetaMapper.executeQuery(
+                "SELECT COUNT(*) AS cnt FROM `" + physicalTableName + "`").get(0).get("cnt")).longValue();
+        Page<Map<String, Object>> page = new Page<>(current, size, total);
+        if (total > 0) {
+            long offset = (long) (current - 1) * size;
+            String querySql = "SELECT * FROM `" + physicalTableName + "` ORDER BY id ASC LIMIT " + size + " OFFSET " + offset;
+            List<Map<String, Object>> records = tableMetaMapper.executeQuery(querySql);
+            page.setRecords(records);
+        }
+        return page;
     }
 
     // ==================== 事件发布方法 ====================
@@ -414,8 +460,7 @@ public class DocumentProcessServiceImpl implements DocumentProcessService {
      */
     private void publishChunkedEvent(KnowledgeDocument document, int segmentCount) {
         log.info("发送文档CHUNKED事件，documentId: {}, segmentCount: {}", document.getDocId(), segmentCount);
-        DocumentChunkedEvent
-                event = new DocumentChunkedEvent(this, document.getDocId(), document.getCurrentVersionId(), segmentCount);
+        DocumentChunkedEvent event = new DocumentChunkedEvent(this, document.getDocId(), document.getCurrentVersionId(), segmentCount);
         eventPublisher.publishEvent(event);
     }
 

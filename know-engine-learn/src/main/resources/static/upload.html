@@ -281,11 +281,6 @@
         </div>
 
         <div class="form-group">
-            <label for="uploadUser">上传用户 *</label>
-            <input type="text" id="uploadUser" name="uploadUser" placeholder="请输入上传用户" required>
-        </div>
-
-        <div class="form-group">
             <label for="accessibleBy">可见范围 *</label>
             <select id="accessibleBy" name="accessibleBy" required style="width:100%;padding:12px 16px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;transition:border-color 0.3s;background-color:white;cursor:pointer;">
                 <option value="">请选择可见范围</option>
@@ -377,12 +372,19 @@
 </div>
 
 <script>
-    // 员工登录态校验：未登录则跳转到员工登录页
+    // 员工登录态校验：未登录或非员工账号则跳转到员工登录页
     (async function checkStaffLogin() {
         try {
             const resp = await fetch('/auth/isLogin');
             const data = await resp.json();
             if (data.code !== 200 || data.data !== true) {
+                window.location.href = '/staff-login.html';
+                return;
+            }
+            const userResp = await fetch('/auth/userInfo');
+            const userData = await userResp.json();
+            if (userData.code !== 200 || !userData.data || userData.data.userType !== 'staff') {
+                await fetch('/auth/logout', { method: 'POST' });
                 window.location.href = '/staff-login.html';
             }
         } catch (e) {
@@ -521,7 +523,6 @@
         formData.append('title', document.getElementById('title').value);
         formData.append('description', document.getElementById('description').value);
         formData.append('knowledgeBaseType', document.getElementById('knowledgeBaseType').value);
-        formData.append('uploadUser', document.getElementById('uploadUser').value);
         formData.append('accessibleBy', document.getElementById('accessibleBy').value);
         // 如果有tableName则添加
         if (knowledgeBaseTypeValue === 'DATA_QUERY') {
@@ -554,18 +555,33 @@
 
                 if (xhr.status === 200) {
                     const response = JSON.parse(xhr.responseText);
-                    showResult('success', '上传成功！', `
-                            <strong>文档ID：</strong>${response.docId}<br>
-                            <strong>文档标题：</strong>${response.docTitle}<br>
-                            <strong>版本ID：</strong>${response.currentVersionId ?? '-'}<br>
-                            <strong>状态：</strong>${response.status}
-                        `);
-                    // 保存文档ID并显示切片表单
-                    document.getElementById('documentId').value = response.docId;
-                    document.getElementById('splitForm').style.display = 'block';
-                    // 重置表单
-                    uploadForm.reset();
-                    fileName.textContent = '';
+                    if (response.knowledgeBaseType === 'DATA_QUERY') {
+                        showResult('success', '上传成功！', `
+                                <strong>文档ID：</strong>${response.docId}<br>
+                                <strong>文档标题：</strong>${response.docTitle}<br>
+                                <strong>版本ID：</strong>${response.currentVersionId ?? '-'}<br>
+                                <strong>状态：</strong>${response.status}<br>
+                                <strong>提示：</strong>DATA_QUERY 类型文档无需切片，数据已导入数据库。
+                            `);
+                        // 重置表单
+                        uploadForm.reset();
+                        fileName.textContent = '';
+                        // 延迟跳转到文档管理页
+                        setTimeout(() => { window.location.href = '/document.html'; }, 1500);
+                    } else {
+                        showResult('success', '上传成功！', `
+                                <strong>文档ID：</strong>${response.docId}<br>
+                                <strong>文档标题：</strong>${response.docTitle}<br>
+                                <strong>版本ID：</strong>${response.currentVersionId ?? '-'}<br>
+                                <strong>状态：</strong>${response.status}
+                            `);
+                        // 保存文档ID并显示切片表单
+                        document.getElementById('documentId').value = response.docId;
+                        document.getElementById('splitForm').style.display = 'block';
+                        // 重置表单
+                        uploadForm.reset();
+                        fileName.textContent = '';
+                    }
                 } else {
                     let errorMsg = '服务器返回错误：' + xhr.status;
                     try {

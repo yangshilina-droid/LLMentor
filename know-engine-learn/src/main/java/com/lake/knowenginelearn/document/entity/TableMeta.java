@@ -45,4 +45,11 @@ public class TableMeta extends BaseEntity {
      */
     @TableField("columns_info")
     private String columnsInfo;
+
+    /**
+     * 关联的文档版本ID（knowledge_document_version.version_id）
+     * 用于 DATA_QUERY 类型文档多版本上传时，物理表与版本一一对应
+     */
+    @TableField("version_id")
+    private Long versionId;
 }

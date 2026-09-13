@@ -89,9 +89,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
         log.info("开始处理文档转换为 Markdown，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
-        document.setStatus(DocumentStatus.CONVERTING);
-        boolean result = knowledgeDocumentService.updateById(document);
-        Assert.isTrue(result, "文件CONVERTING状态更新失败");
+        knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTING);
 
         try {
             // 生成一串数字，避免文件名的中文乱码
@@ -106,16 +104,14 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
             String convertedUrl = fileStorageService.uploadFile(convertedObjectName, markdownContent.getBytes(), ContentType.TEXT_MARKDOWN);
 
             // 更新文档状态为已转换
-            document.setStatus(DocumentStatus.CONVERTED);
-            result = knowledgeDocumentService.updateById(document);
-            Assert.isTrue(result, "文件CONVERTED状态更新失败");
+            knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTED);
             log.info("文档 Markdown 转换完成，documentId: {}", document.getDocTitle());
             return convertedUrl;
         } catch (Exception e) {
             log.error("文档 Markdown 转换失败，documentId: {}", document.getDocTitle(), e);
             // 转换失败，状态回滚为 UPLOADED
             document.setStatus(DocumentStatus.UPLOADED);
-            result = knowledgeDocumentService.updateById(document);
+            boolean result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件UPLOADED状态更新失败");
             throw new RuntimeException("文档 Markdown 转换失败: " + e.getMessage(), e);
         } finally {
@@ -136,9 +132,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
         log.info("开始处理文档转换为 ZIP，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
-        document.setStatus(DocumentStatus.CONVERTING);
-        boolean result = knowledgeDocumentService.updateById(document);
-        Assert.isTrue(result, "文件CONVERTING状态更新失败");
+        knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTING);
 
         try {
             // 生成一串数字，避免文件名的中文乱码
@@ -152,9 +146,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
             String convertedUrl = fileStorageService.uploadFile(convertedObjectName, zipBytes, ZIP);
 
             // 更新文档状态为已转换
-            document.setStatus(DocumentStatus.CONVERTED);
-            result = knowledgeDocumentService.updateById(document);
-            Assert.isTrue(result, "文件CONVERTED状态更新失败");
+            knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTED);
 
             log.info("文档 ZIP 转换完成，documentId: {}", document.getDocTitle());
             return convertedUrl;
@@ -162,7 +154,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
             log.error("文档 ZIP 转换失败，documentId: {}", document.getDocTitle(), e);
             // 转换失败，状态回滚为 UPLOADED
             document.setStatus(DocumentStatus.UPLOADED);
-            result = knowledgeDocumentService.updateById(document);
+            boolean result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件UPLOADED状态更新失败");
             throw new RuntimeException("文档 ZIP 转换失败: " + e.getMessage(), e);
         } finally {
@@ -187,9 +179,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
         log.info("开始处理文档转换为 ZIP，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
-        document.setStatus(DocumentStatus.CONVERTING);
-        boolean result = knowledgeDocumentService.updateById(document);
-        Assert.isTrue(result, "文件CONVERTING状态更新失败");
+        knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTING);
 
         String zipFilePath = null;
         String extractDir = null;
@@ -218,9 +208,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
             String mdMinioUrl = processExtractedFiles(document, extractDir);
 
             // 5. 更新文档状态为已转换
-            document.setStatus(DocumentStatus.CONVERTED);
-            result = knowledgeDocumentService.updateById(document);
-            Assert.isTrue(result, "文件CONVERTED状态更新失败");
+            knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTED);
 
             log.info("文档 ZIP 转换完成，documentId: {}, mdUrl: {}", document.getDocTitle(), mdMinioUrl);
             return mdMinioUrl;
@@ -228,7 +216,7 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
             log.error("文档 ZIP 转换失败，documentId: {}", document.getDocTitle(), e);
             // 转换失败，状态回滚为 UPLOADED
             document.setStatus(DocumentStatus.UPLOADED);
-            result = knowledgeDocumentService.updateById(document);
+            boolean result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件UPLOADED状态更新失败");
             throw new RuntimeException("文档 ZIP 转换失败: " + e.getMessage(), e);
         } finally {

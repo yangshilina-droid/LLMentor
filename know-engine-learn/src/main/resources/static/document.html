@@ -376,6 +376,32 @@
     </div>
 </div>
 
+<!-- 数据预览弹窗 -->
+<div class="modal-overlay" id="dataModal">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <h2>数据预览 <span id="dataDocTitle" style="font-size:14px;color:#888;"></span></h2>
+            <button class="modal-close" onclick="closeModal('dataModal')">&times;</button>
+        </div>
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <span id="dataCount" style="font-size:14px;color:#666;"></span>
+            </div>
+            <div class="toolbar-right">
+                <button class="btn btn-sm btn-primary" onclick="changeDataPage(dataCurrentPage-1)" id="dataPrevBtn">上一页</button>
+                <span class="page-info" id="dataPageInfo">1 / 1</span>
+                <button class="btn btn-sm btn-primary" onclick="changeDataPage(dataCurrentPage+1)" id="dataNextBtn">下一页</button>
+            </div>
+        </div>
+        <div style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+            <table id="dataTable" style="width:100%;border-collapse:collapse;">
+                <thead id="dataTableHead"></thead>
+                <tbody id="dataTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- 分段编辑弹窗 -->
 <div class="modal-overlay" id="segmentEditModal">
     <div class="modal">
@@ -445,10 +471,6 @@
             <div class="form-group">
                 <label>新版本号 *</label>
                 <input type="text" id="versionNumber" required placeholder="请输入版本号，如 2.0.0" pattern="^\d+\.\d+\.\d+$">
-            </div>
-            <div class="form-group">
-                <label>上传用户 *</label>
-                <input type="text" id="versionUploadUser" required placeholder="请输入上传用户">
             </div>
             <div class="form-group">
                 <label>版本变更说明</label>
@@ -556,6 +578,11 @@
     let segmentCurrentPage = 1;
     let segmentPageSize = 10;
     let segmentTotalPages = 1;
+    // 数据预览相关
+    let dataDocId = null;
+    let dataCurrentPage = 1;
+    let dataPageSize = 50;
+    let dataTotalPages = 1;
 
     // ===== 工具函数 =====
     function showToast(msg, type = 'success') {
@@ -654,7 +681,9 @@
                     <td style="white-space:nowrap;">${formatTime(doc.createdAt)}</td>
                     <td>
                         <div class="action-btns">
-                            <button class="btn btn-sm btn-primary" onclick="viewSegments(${doc.docId})">查看分段</button>
+                            ${doc.knowledgeBaseType === 'DATA_QUERY'
+            ? `<button class="btn btn-sm btn-primary" onclick="viewData(${doc.docId})">查看数据</button>`
+            : `<button class="btn btn-sm btn-primary" onclick="viewSegments(${doc.docId})">查看分段</button>`}
                             <button class="btn btn-sm btn-success" onclick="openVersionModal(${doc.docId})">上传新版本</button>
                             <button class="btn btn-sm btn-warning" onclick="openEditModal(${doc.docId})">编辑</button>
                             <button class="btn btn-sm btn-danger" onclick="deleteDocument(${doc.docId})">删除</button>
@@ -810,7 +839,7 @@
 
     // ===== 删除 =====
     async function deleteDocument(docId) {
-        if (!confirm('确认删除该文档？删除后将同时删除其下所有分段（逻辑删除）。')) return;
+        if (!confirm('确认删除该文档？删除后将同时删除其下所有分段。')) return;
         try {
             const res = await fetch(`/api/document/${docId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -844,7 +873,6 @@
         document.getElementById('versionDocTitle').textContent = `- ${docTitle}`;
         document.getElementById('versionDocId').value = docId;
         document.getElementById('versionNumber').value = '';
-        document.getElementById('versionUploadUser').value = '';
         document.getElementById('versionChangelog').value = '';
         document.getElementById('versionFile').value = '';
 
@@ -872,19 +900,16 @@
     async function submitVersion() {
         const docId = document.getElementById('versionDocId').value;
         const version = document.getElementById('versionNumber').value;
-        const uploadUser = document.getElementById('versionUploadUser').value.trim();
         const changelog = document.getElementById('versionChangelog').value.trim();
         const fileInput = document.getElementById('versionFile');
 
         if (!version || !/^\d+\.\d+\.\d+$/.test(version)) { showToast('请输入有效的版本号（如 2.0.0）', 'error'); return; }
-        if (!uploadUser) { showToast('请输入上传用户', 'error'); return; }
         if (!fileInput.files || !fileInput.files[0]) { showToast('请选择文件', 'error'); return; }
 
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
         formData.append('docId', docId);
         formData.append('version', version);
-        formData.append('uploadUser', uploadUser);
         if (changelog) formData.append('changelog', changelog);
 
         try {
@@ -900,8 +925,13 @@
             const doc = await res.json();
             showToast(`新版本 v${version} 上传成功`);
             closeModal('versionModal');
-            // 弹出切片设置弹窗，传入文档对象以回显上次分段参数
-            openVersionSplitModal(doc);
+            if (doc.knowledgeBaseType === 'DATA_QUERY') {
+                showToast('DATA_QUERY 类型文档无需切片，数据已替换');
+                loadDocuments();
+            } else {
+                // 弹出切片设置弹窗，传入文档对象以回显上次分段参数
+                openVersionSplitModal(doc);
+            }
         } catch (e) {
             showToast('上传失败: ' + e.message, 'error');
         }
@@ -924,9 +954,13 @@
             }
             const html = versions.map(v => {
                 const isActive = currentVersionId && v.versionId === currentVersionId;
+                const isLatest = v.version === versions[0].version;
                 const borderColor = isActive ? '#28a745' : (v.version === '1.0.0' ? '#667eea' : '#adb5bd');
                 const activeBadge = isActive ? '<span class="tag" style="background:#28a745;color:#fff;">当前版本</span>' : '';
-                const switchBtn = isActive ? '' : `<button class="btn btn-sm btn-primary" style="margin-left:8px;" onclick="switchVersion(${docId}, ${v.versionId})">切换到此版本</button>`;
+                // DATA_QUERY 类型不支持切换到旧版本，只有最新版本才显示切换按钮
+                const switchBtn = isActive || (doc.knowledgeBaseType === 'DATA_QUERY' && !isLatest)
+                    ? ''
+                    : `<button class="btn btn-sm btn-primary" style="margin-left:8px;" onclick="switchVersion(${docId}, ${v.versionId})">切换到此版本</button>`;
                 const changelogHtml = v.changelog ? `<div style="padding:4px 12px;font-size:13px;color:#666;">变更说明：${escapeHtml(v.changelog)}</div>` : '';
                 return `
                     <div class="segment-item" style="border-left: 4px solid ${borderColor};">
@@ -940,7 +974,9 @@
                                 ${switchBtn}
                             </div>
                             <div class="segment-actions">
-                                <button class="btn btn-sm btn-success" onclick="viewSegmentsFromVersion(${docId}, ${v.versionId}, 'v${v.version}')">查看分段</button>
+                                ${doc.knowledgeBaseType === 'DATA_QUERY'
+                    ? (isLatest ? `<button class="btn btn-sm btn-success" onclick="viewData(${docId})">查看数据</button>` : '')
+                    : `<button class="btn btn-sm btn-success" onclick="viewSegmentsFromVersion(${docId}, ${v.versionId}, 'v${v.version}')">查看分段</button>`}
                             </div>
                         </div>
                         ${changelogHtml}
@@ -957,7 +993,11 @@
     }
 
     async function switchVersion(docId, versionId) {
-        if (!confirm('切换版本后需要重新切片，旧版本数据将在新版本向量化完成后自动清理。确认切换？')) return;
+        const doc = docRecords.find(d => d.docId === docId);
+        const confirmMsg = doc && doc.knowledgeBaseType === 'DATA_QUERY'
+            ? '确认切换版本？'
+            : '切换版本后需要重新切片，旧版本数据将在新版本向量化完成后自动清理。确认切换？';
+        if (!confirm(confirmMsg)) return;
         try {
             const res = await fetch(`/api/document/switch-version?docId=${docId}&versionId=${versionId}`, { method: 'POST' });
             if (!res.ok) {
@@ -1121,6 +1161,66 @@
         if (page < 1 || page > segmentTotalPages) return;
         segmentCurrentPage = page;
         loadSegments();
+    }
+
+    // ===== 数据预览 =====
+    async function viewData(docId) {
+        const doc = docRecords.find(d => d.docId === docId);
+        const docTitle = doc ? (doc.docTitle || '') : '';
+        dataDocId = docId;
+        dataCurrentPage = 1;
+        document.getElementById('dataDocTitle').textContent = `- ${docTitle}`;
+        document.getElementById('dataModal').classList.add('show');
+        await loadData();
+    }
+
+    async function loadData() {
+        const head = document.getElementById('dataTableHead');
+        const body = document.getElementById('dataTableBody');
+        body.innerHTML = '<tr><td colspan="999"><div class="empty-state">加载中...</div></td></tr>';
+        try {
+            const params = new URLSearchParams();
+            params.append('current', dataCurrentPage);
+            params.append('size', dataPageSize);
+            const res = await fetch(`/api/document/data/${dataDocId}?${params}`);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const page = await res.json();
+            dataTotalPages = page.pages || 1;
+            document.getElementById('dataCount').textContent = `共 ${page.total || 0} 条数据`;
+            renderDataTable(page.records || []);
+            document.getElementById('dataPageInfo').textContent = `${dataCurrentPage} / ${dataTotalPages}`;
+            document.getElementById('dataPrevBtn').disabled = dataCurrentPage <= 1;
+            document.getElementById('dataNextBtn').disabled = dataCurrentPage >= dataTotalPages;
+        } catch (e) {
+            body.innerHTML = `<tr><td colspan="999"><div class="empty-state">加载失败: ${escapeHtml(e.message)}</div></td></tr>`;
+            head.innerHTML = '';
+        }
+    }
+
+    function renderDataTable(records) {
+        const head = document.getElementById('dataTableHead');
+        const body = document.getElementById('dataTableBody');
+        head.innerHTML = '';
+        body.innerHTML = '';
+        if (!records || records.length === 0) {
+            body.innerHTML = '<tr><td colspan="999"><div class="empty-state">暂无数据</div></td></tr>';
+            return;
+        }
+        const columns = Object.keys(records[0]);
+        head.innerHTML = '<tr>' + columns.map(col => `<th>${escapeHtml(col)}</th>`).join('') + '</tr>';
+        body.innerHTML = records.map(row => '<tr>' + columns.map(col => `<td>${escapeHtml(formatDataValue(row[col]))}</td>`).join('') + '</tr>').join('');
+    }
+
+    function formatDataValue(value) {
+        if (value === null || value === undefined) return '-';
+        if (typeof value === 'object') return JSON.stringify(value);
+        return String(value);
+    }
+
+    function changeDataPage(page) {
+        if (page < 1 || page > dataTotalPages) return;
+        dataCurrentPage = page;
+        loadData();
     }
 
     // ===== 分段编辑 =====
@@ -1346,20 +1446,19 @@
             }
             const userResp = await fetch('/auth/userInfo');
             const userData = await userResp.json();
-            if (userData.code === 401) {
+            if (userData.code !== 200 || !userData.data || userData.data.userType !== 'staff') {
+                await fetch('/auth/logout', { method: 'POST' });
                 window.location.href = '/staff-login.html';
                 return;
             }
             // 显示当前登录员工名称
-            if (userData.code === 200 && userData.data) {
-                const navbar = document.querySelector('.navbar');
-                if (navbar && !document.getElementById('staffName')) {
-                    const span = document.createElement('span');
-                    span.id = 'staffName';
-                    span.style.cssText = 'font-size:14px;color:#667eea;margin-left:12px;';
-                    span.textContent = '当前员工：' + (userData.data.name || '');
-                    navbar.querySelector('h1').appendChild(span);
-                }
+            const navbar = document.querySelector('.navbar');
+            if (navbar && !document.getElementById('staffName')) {
+                const span = document.createElement('span');
+                span.id = 'staffName';
+                span.style.cssText = 'font-size:14px;color:#667eea;margin-left:12px;';
+                span.textContent = '当前员工：' + (userData.data.name || '');
+                navbar.querySelector('h1').appendChild(span);
             }
             loadDocuments();
         } catch (e) {

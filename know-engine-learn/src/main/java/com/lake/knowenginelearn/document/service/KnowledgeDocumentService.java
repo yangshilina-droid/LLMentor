@@ -1,6 +1,7 @@
 package com.lake.knowenginelearn.document.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
 
 import java.util.List;
@@ -53,4 +54,15 @@ public interface KnowledgeDocumentService extends IService<KnowledgeDocument> {
      * @return 需要清理的文档列表
      */
     List<KnowledgeDocument> scanDocumentsNeedingCleanup();
+
+    /**
+     * 同步推进文档和指定版本的状态。
+     * 仅当当前状态按生命周期顺序早于目标状态时才会更新；若当前状态已大于或等于目标状态，则跳过，避免状态回退。
+     *
+     * @param docId        文档ID
+     * @param versionId    版本ID（knowledge_document_version.version_id）
+     * @param targetStatus 目标状态，如 CONVERTING、CONVERTED、CHUNKED、VECTOR_STORED、STORED
+     * @return 是否执行了更新（true：文档或版本至少有一个被更新；false：均未更新）
+     */
+    boolean advanceDocumentAndVersionStatus(Long docId, Long versionId, DocumentStatus targetStatus);
 }

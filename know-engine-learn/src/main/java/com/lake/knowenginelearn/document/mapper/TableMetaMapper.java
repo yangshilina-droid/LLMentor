@@ -2,10 +2,7 @@ package com.lake.knowenginelearn.document.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.lake.knowenginelearn.document.entity.TableMeta;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
+import org.apache.ibatis.annotations.*;
 
 import java.util.List;
 import java.util.Map;
@@ -57,4 +54,12 @@ public interface TableMetaMapper extends BaseMapper<TableMeta> {
      */
     @Select("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = #{tableName} AND table_schema = DATABASE()")
     int checkTableExists(@Param("tableName") String tableName);
+
+    /**
+     * 根据表名物理删除 table_meta 记录（绕过逻辑删除）
+     *
+     * @param tableName 表名
+     */
+    @Delete("DELETE FROM table_meta WHERE table_name = #{tableName}")
+    void physicalDeleteByTableName(@Param("tableName") String tableName);
 }

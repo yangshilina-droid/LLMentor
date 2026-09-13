@@ -51,9 +51,7 @@ public class MarkdownProcessServiceImpl extends MinerUProcessBaseServiceImpl {
         log.info("开始处理 Markdown 文档图片描述生成，documentId: {}", document.getDocTitle());
 
         // 更新状态为转换中
-        document.setStatus(DocumentStatus.CONVERTING);
-        boolean result = knowledgeDocumentService.updateById(document);
-        Assert.isTrue(result, "文件CONVERTING状态更新失败");
+        knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTING);
 
         try {
             // 1. 读取 Markdown 文件内容
@@ -72,9 +70,7 @@ public class MarkdownProcessServiceImpl extends MinerUProcessBaseServiceImpl {
                     ContentType.TEXT_MARKDOWN);
 
             // 4. 更新文档状态为已转换
-            document.setStatus(DocumentStatus.CONVERTED);
-            result = knowledgeDocumentService.updateById(document);
-            Assert.isTrue(result, "文件CONVERTED状态更新失败");
+            knowledgeDocumentService.advanceDocumentAndVersionStatus(document.getDocId(), document.getCurrentVersionId(), DocumentStatus.CONVERTED);
 
             log.info("Markdown 文档处理完成，documentId: {}, convertedUrl: {}", document.getDocTitle(), convertedUrl);
             return convertedUrl;
@@ -82,7 +78,7 @@ public class MarkdownProcessServiceImpl extends MinerUProcessBaseServiceImpl {
             log.error("Markdown 文档处理失败，documentId: {}", document.getDocTitle(), e);
             // 处理失败，状态回滚为 UPLOADED
             document.setStatus(DocumentStatus.UPLOADED);
-            result = knowledgeDocumentService.updateById(document);
+            boolean result = knowledgeDocumentService.updateById(document);
             Assert.isTrue(result, "文件UPLOADED状态更新失败");
             throw new RuntimeException("Markdown 文档处理失败: " + e.getMessage(), e);
         } finally {

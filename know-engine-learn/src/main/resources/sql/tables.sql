@@ -75,23 +75,28 @@ create TABLE `knowledge_segment` (
                                      INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment = '知识片段表';
 
+
 -- 表元数据表（存储动态创建的表的元数据信息）
-CREATE TABLE `table_meta` (
-                              `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-                              `table_name`   VARCHAR(128) NOT NULL COMMENT '表名',
-                              `description`  VARCHAR(512) NULL     COMMENT '表描述',
-                              `create_sql`   TEXT         NULL     COMMENT '建表语句',
-                              `columns_info` TEXT         NULL     COMMENT '字段信息（JSON格式）',
-                              `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-                              `updated_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '修改时间',
-                              `lock_version` INT          NOT NULL DEFAULT 0 COMMENT '乐观锁版本号',
-                              `deleted`      TINYINT      NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+create TABLE `table_meta` (
+                              `id`           BIGINT       NOT NULL AUTO_INCREMENT comment '主键ID',
+                              `table_name`   VARCHAR(128) NOT NULL comment '表名',
+                              `description`  VARCHAR(512) NULL     comment '表描述',
+                              `create_sql`   TEXT         NULL     comment '建表语句',
+                              `columns_info` TEXT         NULL     comment '字段信息（JSON格式）',
+                              `version_id`   BIGINT       NULL     comment '关联的文档版本ID（knowledge_document_version.version_id），DATA_QUERY 多版本管理使用',
+                              `created_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP comment '创建时间',
+                              `updated_at`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON update CURRENT_TIMESTAMP comment '修改时间',
+                              `lock_version` INT          NOT NULL DEFAULT 0 comment '乐观锁版本号',
+                              `deleted`      TINYINT      NOT NULL DEFAULT 0 comment '是否删除：0-未删除，1-已删除',
                               PRIMARY KEY (`id`),
     -- 表名唯一索引
                               UNIQUE INDEX `uk_table_name` (`table_name`),
+    -- 版本ID索引，用于按版本清理与查询
+                              INDEX `idx_version_id` (`version_id`),
     -- 创建时间索引
                               INDEX `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT = '表元数据表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci comment = '表元数据表';
+
 
 
 -- AI对话会话表
@@ -286,3 +291,7 @@ INSERT INTO `user_info` (`phone`, `password`, `name`, `nickname`) VALUES ('13800
 
 -- 已有库执行 ALTER TABLE 添加 password 列（新建库无需执行）
 ALTER TABLE `staff_info` ADD COLUMN `password` VARCHAR(128) DEFAULT NULL comment '登录密码' AFTER `name`;
+
+
+-- 初始化一个测试员工账号（工号: TEST001，密码: 123456）
+INSERT INTO `staff_info` (`emp_id`, `name`, `password`, `job`, `status`) VALUES ('TEST001', '测试员工', '123456', '知识库管理员', 'ON_JOB') ON DUPLICATE KEY UPDATE `password` = '123456';

@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lake.knowenginelearn.document.constant.DocumentStatus;
 import com.lake.knowenginelearn.document.constant.KnowledgeBaseType;
+import com.lake.knowenginelearn.document.util.DocumentPermissionUtils;
+import com.lake.knowenginelearn.rag.constant.RoleEnum;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -62,6 +64,16 @@ public class KnowledgeDocument extends BaseEntity {
      * 当前激活版本ID，指向 knowledge_document_version.version_id
      */
     private Long currentVersionId;
+
+    public KnowledgeDocument create(DocumentUploadParam documentUploadParam) {
+        this.setDocTitle(documentUploadParam.title());
+        this.setStatus(DocumentStatus.UPLOADED);
+        this.setDescription(documentUploadParam.description());
+        this.setKnowledgeBaseType(KnowledgeBaseType.valueOf(documentUploadParam.knowledgeBaseType()));
+        this.setTableName(documentUploadParam.tableName());
+        this.setAccessibleBy(DocumentPermissionUtils.getDocumentPermission(RoleEnum.valueOf(documentUploadParam.accessibleBy())));
+        return this;
+    }
 
     @JsonIgnore
     public Boolean isOverride() {

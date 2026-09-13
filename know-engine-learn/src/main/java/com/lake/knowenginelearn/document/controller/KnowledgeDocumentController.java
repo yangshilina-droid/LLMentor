@@ -3,6 +3,7 @@ package com.lake.knowenginelearn.document.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.lake.knowenginelearn.auth.service.AuthService;
 import com.lake.knowenginelearn.document.entity.DocumentSplitParam;
 import com.lake.knowenginelearn.document.entity.DocumentUploadParam;
 import com.lake.knowenginelearn.document.entity.KnowledgeDocument;
@@ -20,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 知识文档表 Controller
@@ -40,24 +42,27 @@ public class KnowledgeDocumentController {
     @Autowired
     private PdfProcessServiceImpl fileProcessService;
 
+    @Autowired
+    private AuthService authService;
+
     /**
      * 文件上传接口
      *
      * @param file         上传的文件
-     * @param uploadUser   上传用户
      * @param accessibleBy 可见范围（可选）
      * @return 保存后的文档记录
      */
     @PostMapping("/upload")
     public KnowledgeDocument uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("uploadUser") String uploadUser,
             @RequestParam("title") String title,
+            @RequestParam(value = "version", required = false, defaultValue = "1.0.0") String version,
             @RequestParam(value = "tableName", required = false) String tableName,
             @RequestParam("description") String description,
             @RequestParam("knowledgeBaseType") String knowledgeBaseType,
             @RequestParam(value = "accessibleBy", required = false) String accessibleBy) throws IOException {
-        return documentProcessService.upload(new DocumentUploadParam(file, uploadUser, title, accessibleBy, description, knowledgeBaseType, tableName));
+        String uploadUser = authService.getCurrentUser().getName();
+        return documentProcessService.upload(new DocumentUploadParam(file, title, accessibleBy, description, knowledgeBaseType, tableName, version), uploadUser);
     }
 
     /**
@@ -66,7 +71,6 @@ public class KnowledgeDocumentController {
      * @param file        新版本文件
      * @param docId       文档ID（knowledge_document.doc_id）
      * @param version     新版本号（语义化版本，如 "2.0.0"，必须大于现有最新版本号）
-     * @param uploadUser  上传用户
      * @param changelog   版本变更说明（可选）
      * @return 更新后的文档记录
      */
@@ -75,9 +79,25 @@ public class KnowledgeDocumentController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("docId") Long docId,
             @RequestParam("version") String version,
-            @RequestParam("uploadUser") String uploadUser,
             @RequestParam(value = "changelog", required = false) String changelog) throws IOException {
+        String uploadUser = authService.getCurrentUser().getName();
         return documentProcessService.uploadNewVersion(docId, version, file, uploadUser, changelog);
+    }
+
+    /**
+     * 预览 DATA_QUERY 类型文档的动态表数据
+     *
+     * @param docId   文档ID
+     * @param current 当前页
+     * @param size    每页大小
+     * @return 分页数据
+     */
+    @GetMapping("/data/{docId}")
+    public Page<Map<String, Object>> previewData(
+            @PathVariable Long docId,
+            @RequestParam(defaultValue = "1") Integer current,
+            @RequestParam(defaultValue = "50") Integer size) {
+        return documentProcessService.previewData(docId, current, size);
     }
 
     /**
@@ -148,11 +168,11 @@ public class KnowledgeDocumentController {
     /**
      * 分页查询（支持多条件筛选）
      *
-     * @param current            当前页
-     * @param size               每页大小
-     * @param docTitle           文档标题（模糊查询，可选）
-     * @param status             文档状态，可选值：INIT, UPLOADED, CONVERTING, CONVERTED, CHUNKED, VECTOR_STORED, STORED
-     * @param knowledgeBaseType  知识库类型，可选值：DOCUMENT_SEARCH, DATA_QUERY
+     * @param current           当前页
+     * @param size              每页大小
+     * @param docTitle          文档标题（模糊查询，可选）
+     * @param status            文档状态，可选值：INIT, UPLOADED, CONVERTING, CONVERTED, CHUNKED, VECTOR_STORED, STORED
+     * @param knowledgeBaseType 知识库类型，可选值：DOCUMENT_SEARCH, DATA_QUERY
      * @return 分页结果
      */
     @GetMapping("/page")
@@ -180,9 +200,9 @@ public class KnowledgeDocumentController {
     /**
      * 条件查询列表（不分页）
      *
-     * @param docTitle           文档标题（模糊查询，可选）
-     * @param status             文档状态（可选）
-     * @param knowledgeBaseType  知识库类型（可选）
+     * @param docTitle          文档标题（模糊查询，可选）
+     * @param status            文档状态（可选）
+     * @param knowledgeBaseType 知识库类型（可选）
      * @return 文档列表
      */
     @GetMapping("/list")
