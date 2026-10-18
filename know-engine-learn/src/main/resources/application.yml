@@ -77,13 +77,13 @@ langchain4j:
   open-ai:
     chat-model:
       api-key: @dashscope.api.key@
-      model-name: qwen3.8-max
+      model-name: qwen3.8-flash
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       log-requests: true
       log-responses: true
     streaming-chat-model:
       api-key: @dashscope.api.key@
-      model-name: qwen3.8-max
+      model-name: qwen3.8-flash
       base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
       log-requests: true
       log-responses: true
@@ -105,7 +105,7 @@ neo4j:
 elasticsearch:
   host: http://127.0.0.1:9200
   base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-  model-name: text-embedding-v4
+  model-name: qwen3.7-text-embedding-flash
   api-key: @dashscope.api.key@
   dimensions: 1536
 

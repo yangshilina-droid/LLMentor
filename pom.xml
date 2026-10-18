@@ -21,7 +21,7 @@
         <langchain4j.version>1.13.0-beta23</langchain4j.version>
         <fastjson.version>2.0.43</fastjson.version>
         <!-- 统一配置API Key ，记得改成你自己的-->
-        <dashscope.api.key>sk-430e069e0b8a4e4f828344764a4f1b7a</dashscope.api.key>
+        <dashscope.api.key>sk-ws-H.PRDIIXH.ayJo.MEYCIQDyuvWHO_1VQO5eWKnlBBjdToyGfXbm_WD3i-OItwxHtwIhAOLkz4MEyxr9dmyzxSQ0f8X8Okri-jVhbRIPBhwdTd9D</dashscope.api.key>
 	</properties>
 
     <dependencyManagement>

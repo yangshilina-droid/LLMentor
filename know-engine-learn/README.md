@@ -194,7 +194,7 @@
 - **SSE 实时推送**：基于 Reactor `Flux` 的全链路流式输出，Token 级逐字推送
 - **进度可见**：RAG 管道每个环节（意图识别 → 问题改写 → 问题路由 → 排序筛选 → 生成回答）均向前端推送 `[PROGRESS]` 事件，消除等待焦虑
 - **RAG 引用溯源**：检索结果携带文档来源、分片内容、Rerank 分数，支持可解释性审查
-- **异步标题生成**：新对话自动以 Java 21 虚拟线程 + qwen3.5-flash 轻量模型异步生成摘要标题，不阻塞首 Token 延迟；失败时保留临时标题，保障主流程不受影响
+- **异步标题生成**：新对话自动以 Java 21 虚拟线程 + qwen3.8-flash 轻量模型异步生成摘要标题，不阻塞首 Token 延迟；失败时保留临时标题，保障主流程不受影响
 - **交互卡片输出**：SSE 流式响应中支持 `[CARD]` 结构化卡片事件，将车型对比、订单详情、召回信息等结构化数据以卡片形式呈现。LLM 通过 Prompt 引导在特定场景输出结构化 JSON 标记，后端解析后转换为 `[CARD]` 事件，前端根据卡片类型（`vehicle_info` / `order_detail` / `recall_notice` / `comparison_table`）渲染对应 UI 组件，支持点击展开详情、跳转链接等交互操作
 - **钉钉机器人接入**：接入钉钉机器人，支持单聊和群聊 @机器人两种模式。钉钉消息回调经签名验证后转换为 KnowEngine 统一对话接口调用，流式收集完整回复后通过钉钉 API 回复；群聊模式自动识别 @内容 作为用户问题
 
@@ -280,10 +280,10 @@ Markdown 文档中的表格和图片在被 `chunkSize` 二次切割时面临语�
 
 ### 🔥 虚拟线程 + Flash 模型 — 异步标题生成零延迟
 
-新会话首条消息发出后，系统通过 `Thread.ofVirtual().name("title-summary-" + conversationId).start(...)` 启动 Java 21 虚拟线程，异步调用 qwen3.5-flash 轻量模型生成对话标题并回写数据库。关键设计：
+新会话首条消息发出后，系统通过 `Thread.ofVirtual().name("title-summary-" + conversationId).start(...)` 启动 Java 21 虚拟线程，异步调用 qwen3.8-flash 轻量模型生成对话标题并回写数据库。关键设计：
 - **零阻塞**：虚拟线程不占用平台线程，不阻塞 SSE 流式响应的首 Token 输出
-- **Flash 模型选型**：使用 qwen3.5-flash 而非 qwen-max，标题生成任务对推理能力要求低，Flash 模型响应更快、成本更低
-- **关闭思考模式**：通过 `customParameters(Map.of("enable_thinking", false))` 关闭 qwen3.5-flash 的 CoT 思考过程，进一步降低延迟
+- **模型配置**：标题生成复用 `langchain4j.open-ai.chat-model.model-name`，默认使用 qwen3.8-flash
+- **关闭思考模式**：通过 `customParameters(Map.of("enable_thinking", false))` 关闭 qwen3.8-flash 的 CoT 思考过程，进一步降低延迟
 - **优雅降级**：标题生成失败时保留临时标题，不影响对话功能
 
 ### 🔥 意图识别 — LLM Structured Output 约束
@@ -341,14 +341,14 @@ Excel/CSV 类型文档则独立走 `ExcelSplitter` 处理，不经过工厂模�
 |---------------|-------------------------------------------|-------------------------|
 | **语言/框架**     | Java 21 + Spring Boot 3.5                 | 虚拟线程、Record 模式匹配        |
 | **AI 框架**     | LangChain4j 1.11.0                        | RAG 管道、AI Services、流式对话 |
-| **LLM**       | qwen-max-latest、qwen3.5-flash            | 意图识别、查询改写、路由决策、流式生成     |
+| **LLM**       | qwen3.8-flash            | 意图识别、查询改写、路由决策、流式生成     |
 | **向量存储**      | Elasticsearch                             | KNN / 全文 / 混合检索         |
 | **图数据库**      | Neo4j + APOC                              | Text2Cypher 实体关系查询      |
 | **关系数据库**     | MySQL + MyBatis-Plus                      | 业务数据 + Text2SQL 结构化查询   |
 | **对象存储**      | MinIO                                     | 文档文件存储                  |
 | **缓存**        | Redis + Redisson                          | 分布式锁、父分段缓存              |
 | **Reranking** | BGE-RERANKER (ONNX Runtime)               | 进程内本地推理，零网络开销           |
-| **Embedding** | text-embedding-v4 (通义)                    | 1536 维向量                |
+| **Embedding** | qwen3.7-text-embedding-flash (通义)                    | 1536 维向量                |
 | **文件解析**      | MinerU (PDF)、Apache Tika (类型检测)、EasyExcel | 多格式文档解析                 |
 | **任务调度**      | XXL-Job 2.4                               | 补偿任务定时触发                |
 | **响应式**       | Project Reactor                           | SSE 流式推送、非阻塞调度          |

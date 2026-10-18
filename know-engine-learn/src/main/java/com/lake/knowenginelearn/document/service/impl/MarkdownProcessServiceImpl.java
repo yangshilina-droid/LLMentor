@@ -98,22 +98,24 @@ public class MarkdownProcessServiceImpl extends MinerUProcessBaseServiceImpl {
             String originAlt = matcher.group(1);
             String imageUrl = matcher.group(2);
 
-            String description;
-            try {
-                // 调用基类提供的视觉模型生成描述
-                description = generateImageDescription(imageUrl);
-                if (description == null || description.isBlank()) {
-                    log.warn("图片描述为空，保留原 alt 文本，url: {}", imageUrl);
-                    description = originAlt;
-                } else {
-                    // 去除可能存在的换行，保证 Markdown 标签单行
-                    description = description.replaceAll("[\\r\\n]+", " ").trim();
-                }
-                log.info("图片描述已生成: {} -> {}", imageUrl, description);
-            } catch (Exception e) {
-                log.warn("生成图片描述失败，保留原 alt 文本，url: {}", imageUrl, e);
-                description = originAlt;
-            }
+            // 暂停视觉模型调用，保留原 alt 文本。
+            String description = originAlt;
+            // String description;
+            // try {
+            //     // 调用基类提供的视觉模型生成描述
+            //     description = generateImageDescription(imageUrl);
+            //     if (description == null || description.isBlank()) {
+            //         log.warn("图片描述为空，保留原 alt 文本，url: {}", imageUrl);
+            //         description = originAlt;
+            //     } else {
+            //         // 去除可能存在的换行，保证 Markdown 标签单行
+            //         description = description.replaceAll("[\\r\\n]+", " ").trim();
+            //     }
+            //     log.info("图片描述已生成: {} -> {}", imageUrl, description);
+            // } catch (Exception e) {
+            //     log.warn("生成图片描述失败，保留原 alt 文本，url: {}", imageUrl, e);
+            //     description = originAlt;
+            // }
 
             String newImageTag = "![" + description + "](" + imageUrl + ")";
             matcher.appendReplacement(result, Matcher.quoteReplacement(newImageTag));

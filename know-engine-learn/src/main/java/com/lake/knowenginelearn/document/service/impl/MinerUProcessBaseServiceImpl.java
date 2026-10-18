@@ -353,8 +353,9 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
                 continue;
             }
 
-            // 生成图片描述（mock 实现）
-            String imageDescription = generateImageDescription(minioUrl);
+            // 暂停视觉模型调用，保留原 alt 文本。
+            // String imageDescription = generateImageDescription(minioUrl);
+            String imageDescription = altText;
 
             // 构建新的图片标签: ![描述](minio_url)
             String newImageTag = "![" + imageDescription + "](" + minioUrl + ")";
@@ -378,17 +379,19 @@ public abstract class MinerUProcessBaseServiceImpl implements FileProcessService
      * 需要注意的是，如果你用的是外部的模型，这个url需要是公网可以访问的url。否则模型需要能和MinIO进行内网通信。
      */
     public String generateImageDescription(String imageUrl) {
-        OpenAiChatModel chatModel = OpenAiChatModel.builder()
-                .apiKey(chatModelApiKey)
-                .baseUrl(chatModelBaseUrl)
-                .modelName("qwen3-vl-plus")
-                .temperature(0.7)
-                .logResponses(true)
-                .logRequests(true)
-                .build();
-
-        UserMessage userMessage = UserMessage.from(new TextContent("请描述这张图片的内容，包括场景、对象、布局、颜色、文字信息，直接输出纯文本描述，不要多余说明，不要增加任何特殊符号，特别是换行符"), new ImageContent(imageUrl));
-        return chatModel.chat(userMessage).aiMessage().text();
+        // 暂停视觉模型调用，直接调用此方法时返回空描述。
+        // OpenAiChatModel chatModel = OpenAiChatModel.builder()
+        //         .apiKey(chatModelApiKey)
+        //         .baseUrl(chatModelBaseUrl)
+        //         .modelName("qwen3-vl-plus")
+        //         .temperature(0.7)
+        //         .logResponses(true)
+        //         .logRequests(true)
+        //         .build();
+        //
+        // UserMessage userMessage = UserMessage.from(new TextContent("请描述这张图片的内容，包括场景、对象、布局、颜色、文字信息，直接输出纯文本描述，不要多余说明，不要增加任何特殊符号，特别是换行符"), new ImageContent(imageUrl));
+        // return chatModel.chat(userMessage).aiMessage().text();
+        return "";
     }
 
     /**

@@ -181,7 +181,7 @@ public class ChatApplicationService {
                 try {
                     OpenAiChatModel titleChatModel = OpenAiChatModel.builder()
                             .apiKey(chatModelApiKey)
-                            .modelName("qwen3.5-flash")
+                            .modelName(chatModelName)
                             .temperature(0.7)
                             .baseUrl(chatModelBaseUrl)
                             .customParameters(Map.of("enable_thinking", false))

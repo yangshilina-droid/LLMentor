@@ -33,7 +33,7 @@ public class ChatModelBenchmarkTest {
     /**
      * API Key（请替换为你自己的Key）
      */
-    private static final String API_KEY = "sk-0247a4b5f8854f4f9ff5fd284895ba9d";
+    private static final String API_KEY = "sk-ws-H.PRDIIXH.ayJo.MEYCIQDyuvWHO_1VQO5eWKnlBBjdToyGfXbm_WD3i-OItwxHtwIhAOLkz4MEyxr9dmyzxSQ0f8X8Okri-jVhbRIPBhwdTd9D";
 
     /**
      * 要测试的模型列表
