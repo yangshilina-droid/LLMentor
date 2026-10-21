@@ -12,6 +12,7 @@ import dev.langchain4j.data.document.splitter.DocumentByWordSplitter;
 public class DocumentSplitterFactory {
     public static DocumentSplitter getInstance(DocumentSplitParam documentSplitParam) {
         if (SplitType.TITLE.name().equals(documentSplitParam.splitType())) {
+            // 管理后台传入标题级别指定分割层级
             return new MarkdownHeaderParentTextSplitter(documentSplitParam.titleLevel(), false, false, documentSplitParam.chunkSize(), documentSplitParam.overlap());
         }
 
