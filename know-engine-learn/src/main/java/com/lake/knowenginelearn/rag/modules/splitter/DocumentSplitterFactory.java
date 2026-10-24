@@ -13,6 +13,7 @@ public class DocumentSplitterFactory {
     public static DocumentSplitter getInstance(DocumentSplitParam documentSplitParam) {
         if (SplitType.TITLE.name().equals(documentSplitParam.splitType())) {
             // 管理后台传入标题级别指定分割层级
+            // 只有标题没有正文，会进行标题合并
             return new MarkdownHeaderParentTextSplitter(documentSplitParam.titleLevel(), false, false, documentSplitParam.chunkSize(), documentSplitParam.overlap());
         }
 
