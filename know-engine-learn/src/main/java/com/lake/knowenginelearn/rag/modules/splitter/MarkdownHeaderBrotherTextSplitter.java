@@ -270,6 +270,13 @@ public class MarkdownHeaderBrotherTextSplitter implements DocumentSplitter {
      * 聚合行为分块
      * 将具有相同元数据的行合并为一个分块，并处理父子关系
      *
+     * 如：会将以下内容合成一个分段，只有标题没有内容会进行合并
+     * #车辆概览
+     * ##主驾中控屏
+     * ##控制中心
+     * 将您常用的车辆控制快捷开关、驾驶模式切换、智能家居设备开关等,集合到控制中心,让您操控车辆更便捷。
+     * 使用快捷开关
+     *
      * @param lines 待聚合的行列表
      * @return 聚合后的文档片段列表
      */
